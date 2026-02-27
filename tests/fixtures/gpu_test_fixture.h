@@ -49,11 +49,11 @@ protected:
 /**
  * @brief Skip test if compute capability is less than required
  */
-#define SKIP_IF_COMPUTE_LESS_THAN(major, minor) \
+#define SKIP_IF_COMPUTE_LESS_THAN(req_major, req_minor) \
     do { \
-        if (device_props_.major < major || \
-            (device_props_.major == major && device_props_.minor < minor)) { \
-            GTEST_SKIP() << "Requires compute capability " << major << "." << minor; \
+        if (device_props_.major < req_major || \
+            (device_props_.major == req_major && device_props_.minor < req_minor)) { \
+            GTEST_SKIP() << "Requires compute capability " << req_major << "." << req_minor; \
         } \
     } while(0)
 

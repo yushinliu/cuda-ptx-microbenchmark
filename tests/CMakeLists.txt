@@ -78,7 +78,50 @@ set_target_properties(e2e_tests PROPERTIES
 )
 add_test(NAME E2ETests COMMAND e2e_tests)
 
+# Microbenchmark tests (new TDD-based tests)
+# Include kernel sources directly to ensure proper CUDA linking
+add_executable(microbench_tests
+    microbench/test_memory_bandwidth.cu
+    microbench/test_memory_latency.cu
+    microbench/test_shared_memory.cu
+    microbench/test_instruction_latency.cu
+    microbench/test_instruction_throughput.cu
+    microbench/test_warp_scheduler.cu
+    microbench/test_integer_instructions.cu
+    microbench/test_double_precision.cu
+    microbench/test_l2_cache.cu
+    microbench/test_ada_specific.cu
+    microbench/test_tensor_cores.cu
+    microbench/test_shared_memory_banks.cu
+    # Kernel sources for proper device linking
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/integer_instructions.cu
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/double_precision.cu
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/l2_cache.cu
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/ada_specific.cu
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/tensor_cores.cu
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/shared_memory_banks.cu
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/instruction_latency.cu
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/instruction_throughput.cu
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/memory_bandwidth.cu
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/memory_latency.cu
+    ${CMAKE_SOURCE_DIR}/src/kernels/microbench/shared_memory.cu
+)
+target_include_directories(microbench_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(microbench_tests PRIVATE
+    test_fixtures
+    GTest::gtest_main
+)
+set_target_properties(microbench_tests PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_RESOLVE_DEVICE_SYMBOLS ON
+)
+add_test(NAME MicrobenchTests COMMAND microbench_tests)
+
 # Test labels for selective running
 set_tests_properties(UnitTests PROPERTIES LABELS "unit")
 set_tests_properties(IntegrationTests PROPERTIES LABELS "integration")
 set_tests_properties(E2ETests PROPERTIES LABELS "e2e")
+set_tests_properties(MicrobenchTests PROPERTIES LABELS "microbench")

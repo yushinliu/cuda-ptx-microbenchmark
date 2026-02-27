@@ -58,6 +58,12 @@ add_library(cpm_kernels STATIC
     src/kernels/ptx/arithmetic.cu
     src/kernels/ptx/memory_ptx.cu
     src/kernels/ptx/synchronization.cu
+    src/kernels/microbench/integer_instructions.cu
+    src/kernels/microbench/double_precision.cu
+    src/kernels/microbench/l2_cache.cu
+    src/kernels/microbench/ada_specific.cu
+    src/kernels/microbench/tensor_cores.cu
+    src/kernels/microbench/shared_memory_banks.cu
 )
 target_link_libraries(cpm_kernels PUBLIC cpm_core)
 set_target_properties(cpm_kernels PROPERTIES
