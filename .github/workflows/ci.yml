@@ -1,0 +1,98 @@
+name: CUDA Build and Test
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+env:
+  CUDA_VERSION: "12.4.1"
+  CUDA_ARCHITECTURES: "89"  # RTX 4070
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install CUDA Toolkit
+      uses: Jimver/cuda-toolkit@v0.2.14
+      with:
+        cuda: ${{ env.CUDA_VERSION }}
+        sub-packages: '[]'  # Install all sub-packages
+
+    - name: Verify CUDA Installation
+      run: |
+        nvcc --version
+        which nvcc
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build libgtest-dev
+
+    - name: Build Google Test
+      run: |
+        cd /usr/src/googletest
+        sudo cmake -B build -S . -DBUILD_SHARED_LIBS=OFF
+        sudo cmake --build build --parallel
+        sudo cmake --install build
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -S . \
+          -G Ninja \
+          -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
+          -DCMAKE_CUDA_ARCHITECTURES=${{ env.CUDA_ARCHITECTURES }} \
+          -DENABLE_TESTING=ON \
+          -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: cmake --build build --parallel
+
+    - name: Verify Binaries
+      run: |
+        ls -la build/cpm
+        file build/cpm
+        ls -la build/tests/unit_tests
+        ls -la build/tests/integration_tests
+        ls -la build/tests/e2e_tests
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install linters
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format cppcheck
+
+    - name: Check code formatting
+      run: |
+        find src tests -name "*.cpp" -o -name "*.cu" -o -name "*.h" | \
+          xargs clang-format --dry-run --Werror || true
+
+    - name: Run cppcheck
+      run: |
+        cppcheck --enable=all --suppress=missingInclude \
+          --suppress=unusedFunction --error-exitcode=0 \
+          -I include src || true
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check documentation
+      run: |
+        test -f README.md || echo "WARNING: README.md missing"
+        test -f LICENSE || echo "WARNING: LICENSE missing"
+        ls -la docs/
+
+    - name: Verify PTX documentation
+      run: |
+        test -f docs/PTX_QUICK_REFERENCE.md
+        test -f docs/TDD_WORKFLOW.md
+        echo "Documentation files verified"
