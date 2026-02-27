@@ -1,0 +1,42 @@
+# Build directories
+build/
+build-*/
+cmake-build-*/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Compiled files
+*.o
+*.a
+*.so
+*.exe
+*.out
+*.fatbin
+*.cubin
+*.ptx
+
+# CUDA specific
+*.i
+*.ii
+*.cudafe1.*
+*.reg.c
+*.module_id
+
+# Testing
+Testing/
+test_results/
+coverage/
+*.gcov
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
