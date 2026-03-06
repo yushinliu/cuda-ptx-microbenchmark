@@ -69,19 +69,11 @@ Interpretation:
 
 ### Nsight Compute Status
 
-Nsight Compute was attempted with:
+Nsight Compute is now usable in this WSL environment after adding a local
+`libcuda.so.1` symlink inside the Nsight Compute target directory to point at
+`/usr/lib/wsl/lib/libcuda.so.1`.
 
-- regular user
-- elevated sandbox execution
-- `sudo`
-- two installed `ncu` versions
-
-Result:
-
-- profiling was blocked by `ERR_NVGPUCTRPERM`
-- even under `sudo`, the environment still could not access GPU performance counters on this machine
-
-This means no valid Nsight Compute counter report could be collected in the current environment. The blocker is system permission configuration, not kernel correctness or launch failure.
+This fixed the driver connection error and allowed direct kernel profiling.
 
 ### Is There Still Headroom?
 
@@ -142,11 +134,96 @@ Notes:
 - On very large or strongly rectangular cases, the optimized kernel is not always faster than the naive PTX kernel, but both still outperform the PyTorch baseline in the measured workloads.
 - The tiled kernel is the more principled generic optimization because it addresses the fundamental transpose access pattern rather than a single-size artifact.
 
+## Additional Optimization Pass
+
+After the first implementation pass, four more generic candidates were added to the native benchmark path:
+
+- `ptx_vector`: vectorized `ld/st` around the tiled transpose path
+- `ptx_swizzle`: shared-memory swizzle to reduce bank conflicts without shape-specific dispatch
+- `ptx_cpasync`: direct global-to-shared copy using `cp.async`
+- `ptx_vswizzle`: vectorized load/store combined with swizzled shared-memory layout
+
+All candidates passed GPU correctness tests.
+
+### Candidate Comparison
+
+| Shape | Best Variant | Key Observation |
+|---|---|---|
+| 4096 x 4096 | `ptx_opt` | Current tiled padded kernel remained marginally best |
+| 8192 x 8192 | `ptx_swizzle` | Swizzle helped more than padding at larger scale |
+| 3000 x 5000 | `ptx_swizzle` | Swizzle slightly outperformed the padded tiled kernel |
+
+Representative numbers:
+
+| Shape | `ptx_opt` ms | `ptx_swizzle` ms | `ptx_cpasync` ms | `ptx_vswizzle` ms |
+|---|---:|---:|---:|---:|
+| 4096 x 4096 | 0.3392 | 0.3420 | 0.3503 | 0.3430 |
+| 8192 x 8192 | 1.5129 | 1.4783 | 1.5562 | 1.5399 |
+| 3000 x 5000 | 0.2944 | 0.2921 | 0.3018 | 0.3005 |
+
+Conclusion from this pass:
+
+- `swizzle` is the strongest new generic optimization candidate.
+- `cp.async` did not improve this transpose workload, likely because the kernel has only one tile stage and limited opportunity to hide copy latency behind independent work.
+- `vector load/store` alone did not consistently beat the existing padded tile kernel.
+- `vector + swizzle` did not outperform plain `swizzle`, so the extra complexity is not currently justified.
+
+## Nsight Compute Findings After Fix
+
+Profiled kernels:
+
+- `reference_transpose_kernel`
+- `transpose_opt_kernel`
+- `transpose_swizzle_kernel`
+- `transpose_vswizzle_kernel`
+
+Key findings:
+
+- `reference_transpose_kernel` is dominated by uncoalesced global stores.
+- `transpose_opt_kernel` removes the global-store pathology and shifts the bottleneck to memory latency / L1TEX scoreboard wait.
+- The original swizzle mapping was wrong and still triggered shared-memory bank conflicts.
+- After changing the swizzle mapping to `col ^ row`, the shared bank-conflict warning disappeared for `transpose_swizzle_kernel`.
+- The corrected `transpose_swizzle_kernel` showed stronger profiler-side metrics than the previous swizzle attempt:
+  - duration dropped to about `281.7 us`
+  - memory throughput rose to about `411.5 GB/s`
+  - achieved occupancy rose to about `88.5%`
+- `transpose_vswizzle_kernel` still underperformed in `ncu` due to high L1TEX scoreboard stalls and lower issue efficiency, so combining vectorization with swizzle is not currently the best direction.
+
 ## Final Conclusion
 
 - Task 1: completed with GPU benchmarking and Nsight Systems output.
 - Task 2: completed with a PTX transpose implementation whose `.cu` file does not depend on any PyTorch headers.
 - Task 3: completed with a generic tiled PTX optimization that outperforms the PyTorch transpose baseline on all measured workloads in this report.
+
+## Current Repository State
+
+The repository now has two transpose code paths:
+
+- Native repository benchmark path in `src/kernels/ptx/transpose.cu`
+- PyTorch extension path in `experiments/transpose_ptx/transpose_kernel.cu`
+
+Important note:
+
+- The native repository `launch_transpose_ptx_opt()` entry now defaults to the corrected swizzle implementation.
+- The PyTorch extension path has not yet been updated to mirror that same default implementation.
+
+Recent native benchmark results after switching the default optimized path:
+
+| Shape | Native Reference ms | Native PTX Opt ms | Native PTX Swizzle ms |
+|---|---:|---:|---:|
+| 4096 x 4096 | 0.3461 | 0.3443 | 0.3279 |
+| 3000 x 5000 | 0.2957 | 0.2911 | 0.2918 |
+| 8192 x 8192 | 1.4281 | 1.4557 | 1.4592 |
+
+Recent PyTorch extension comparison on `8192 x 8192`:
+
+| Impl | Avg ms |
+|---|---:|
+| PyTorch transpose contiguous | 4.7555 |
+| PTX naive | 1.9318 |
+| PTX opt (extension path) | 2.0801 |
+
+This means the native repository path and the PyTorch extension path should be interpreted separately until the extension implementation is synchronized with the latest native kernel work.
 
 Constraint that remains external:
 

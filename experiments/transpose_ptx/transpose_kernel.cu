@@ -3,6 +3,14 @@
 
 namespace {
 
+constexpr int kTileDim = 32;
+constexpr int kBlockRows = 8;
+
+__device__ __forceinline__ int swizzle_index(int row, int col) {
+    const int swizzled_col = col ^ row;
+    return row * kTileDim + swizzled_col;
+}
+
 __global__ void transpose_naive_kernel(
     const float* __restrict__ input,
     float* __restrict__ output,
@@ -21,26 +29,24 @@ __global__ void transpose_naive_kernel(
     asm volatile("st.global.f32 [%0], %1;" : : "l"(output + out_idx), "f"(val) : "memory");
 }
 
-constexpr int kTileDim = 32;
-constexpr int kBlockRows = 8;
-
-__global__ void transpose_opt_kernel(
+__global__ void transpose_swizzle_kernel(
     const float* __restrict__ input,
     float* __restrict__ output,
     int64_t rows,
     int64_t cols) {
-    __shared__ float tile[kTileDim][kTileDim + 1];
+    __shared__ float tile[kTileDim * kTileDim];
 
     int64_t x = static_cast<int64_t>(blockIdx.x) * kTileDim + threadIdx.x;
     int64_t y = static_cast<int64_t>(blockIdx.y) * kTileDim + threadIdx.y;
 
     #pragma unroll
     for (int j = 0; j < kTileDim; j += kBlockRows) {
+        const int row_in_tile = threadIdx.y + j;
         if (x < cols && (y + j) < rows) {
             const int64_t in_idx = (y + j) * cols + x;
             float val;
             asm volatile("ld.global.f32 %0, [%1];" : "=f"(val) : "l"(input + in_idx));
-            tile[threadIdx.y + j][threadIdx.x] = val;
+            tile[swizzle_index(row_in_tile, threadIdx.x)] = val;
         }
     }
 
@@ -51,8 +57,9 @@ __global__ void transpose_opt_kernel(
 
     #pragma unroll
     for (int j = 0; j < kTileDim; j += kBlockRows) {
+        const int col_in_tile = threadIdx.y + j;
         if (x < rows && (y + j) < cols) {
-            const float val = tile[threadIdx.x][threadIdx.y + j];
+            const float val = tile[swizzle_index(threadIdx.x, col_in_tile)];
             const int64_t out_idx = (y + j) * rows + x;
             asm volatile("st.global.f32 [%0], %1;" : : "l"(output + out_idx), "f"(val) : "memory");
         }
@@ -85,6 +92,6 @@ extern "C" cudaError_t launch_transpose_ptx_opt(
     dim3 grid(
         static_cast<unsigned int>((cols + kTileDim - 1) / kTileDim),
         static_cast<unsigned int>((rows + kTileDim - 1) / kTileDim));
-    transpose_opt_kernel<<<grid, block, 0, stream>>>(input, output, rows, cols);
+    transpose_swizzle_kernel<<<grid, block, 0, stream>>>(input, output, rows, cols);
     return cudaGetLastError();
 }

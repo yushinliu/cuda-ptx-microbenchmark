@@ -161,6 +161,36 @@ int main(int argc, char** argv) {
             warmup,
             iters,
             bytes_moved));
+        results.push_back(run_benchmark(
+            "ptx_vector",
+            [&](cudaStream_t stream) { return cpm::launch_transpose_ptx_vector(d_input, d_output, rows, cols, stream); },
+            warmup,
+            iters,
+            bytes_moved));
+        results.push_back(run_benchmark(
+            "ptx_swizzle",
+            [&](cudaStream_t stream) { return cpm::launch_transpose_ptx_swizzle(d_input, d_output, rows, cols, stream); },
+            warmup,
+            iters,
+            bytes_moved));
+        results.push_back(run_benchmark(
+            "ptx_cpasync",
+            [&](cudaStream_t stream) { return cpm::launch_transpose_ptx_cpasync(d_input, d_output, rows, cols, stream); },
+            warmup,
+            iters,
+            bytes_moved));
+        results.push_back(run_benchmark(
+            "ptx_vswizzle",
+            [&](cudaStream_t stream) { return cpm::launch_transpose_ptx_vswizzle(d_input, d_output, rows, cols, stream); },
+            warmup,
+            iters,
+            bytes_moved));
+        results.push_back(run_benchmark(
+            "ptx_swizzle16",
+            [&](cudaStream_t stream) { return cpm::launch_transpose_ptx_swizzle16(d_input, d_output, rows, cols, stream); },
+            warmup,
+            iters,
+            bytes_moved));
     } catch (const std::exception& ex) {
         std::cerr << "benchmark failed: " << ex.what() << '\n';
         cudaFree(d_output);

@@ -82,14 +82,18 @@ int count_mismatches(const float* lhs, const float* rhs, int64_t n) {
 
 class PtxTransposeTest : public GpuTestFixture {};
 
-TEST_F(PtxTransposeTest, test_transpose_naive_matches_reference_on_gpu) {
-    const int64_t rows = 257;
-    const int64_t cols = 509;
-    const int64_t elements = rows * cols;
+using TransposeLauncher = cudaError_t (*)(const float*, float*, int64_t, int64_t, cudaStream_t);
 
-    std::vector<float> host_input(elements);
+void expect_matches_reference(
+    TransposeLauncher launcher,
+    int64_t rows,
+    int64_t cols,
+    int pattern_mod) {
+    const int64_t elements = rows * cols;
+    std::vector<float> host_input(static_cast<size_t>(elements));
     for (int64_t i = 0; i < elements; ++i) {
-        host_input[static_cast<size_t>(i)] = static_cast<float>((i % 97) - 48) * 0.25f;
+        host_input[static_cast<size_t>(i)] =
+            static_cast<float>((i % pattern_mod) - (pattern_mod / 2)) * 0.125f;
     }
 
     float* d_input = nullptr;
@@ -103,7 +107,7 @@ TEST_F(PtxTransposeTest, test_transpose_naive_matches_reference_on_gpu) {
         d_input, host_input.data(), elements * sizeof(float), cudaMemcpyHostToDevice));
 
     ASSERT_CUDA_SUCCESS(launch_reference_transpose(d_input, d_reference, rows, cols));
-    ASSERT_CUDA_SUCCESS(launch_transpose_ptx_naive(d_input, d_output, rows, cols));
+    ASSERT_CUDA_SUCCESS(launcher(d_input, d_output, rows, cols, nullptr));
     ASSERT_CUDA_SUCCESS(cudaDeviceSynchronize());
 
     EXPECT_EQ(count_mismatches(d_output, d_reference, elements), 0);
@@ -111,64 +115,38 @@ TEST_F(PtxTransposeTest, test_transpose_naive_matches_reference_on_gpu) {
     cudaFree(d_reference);
     cudaFree(d_output);
     cudaFree(d_input);
+}
+
+TEST_F(PtxTransposeTest, test_transpose_naive_matches_reference_on_gpu) {
+    expect_matches_reference(launch_transpose_ptx_naive, 257, 509, 97);
 }
 
 TEST_F(PtxTransposeTest, test_transpose_opt_matches_reference_on_gpu) {
-    const int64_t rows = 3000;
-    const int64_t cols = 5000;
-    const int64_t elements = rows * cols;
-
-    std::vector<float> host_input(static_cast<size_t>(elements));
-    for (int64_t i = 0; i < elements; ++i) {
-        host_input[static_cast<size_t>(i)] = static_cast<float>((i % 251) - 125) * 0.125f;
-    }
-
-    float* d_input = nullptr;
-    float* d_output = nullptr;
-    float* d_reference = nullptr;
-
-    ASSERT_CUDA_SUCCESS(cudaMalloc(&d_input, elements * sizeof(float)));
-    ASSERT_CUDA_SUCCESS(cudaMalloc(&d_output, elements * sizeof(float)));
-    ASSERT_CUDA_SUCCESS(cudaMalloc(&d_reference, elements * sizeof(float)));
-    ASSERT_CUDA_SUCCESS(cudaMemcpy(
-        d_input, host_input.data(), elements * sizeof(float), cudaMemcpyHostToDevice));
-
-    ASSERT_CUDA_SUCCESS(launch_reference_transpose(d_input, d_reference, rows, cols));
-    ASSERT_CUDA_SUCCESS(launch_transpose_ptx_opt(d_input, d_output, rows, cols));
-    ASSERT_CUDA_SUCCESS(cudaDeviceSynchronize());
-
-    EXPECT_EQ(count_mismatches(d_output, d_reference, elements), 0);
-
-    cudaFree(d_reference);
-    cudaFree(d_output);
-    cudaFree(d_input);
+    expect_matches_reference(launch_transpose_ptx_opt, 3000, 5000, 251);
 }
 
 TEST_F(PtxTransposeTest, test_transpose_opt_handles_small_square_matrix) {
-    const int64_t rows = 32;
-    const int64_t cols = 32;
-    const int64_t elements = rows * cols;
+    expect_matches_reference(launch_transpose_ptx_opt, 32, 32, 17);
+}
 
-    std::vector<float> host_input(static_cast<size_t>(elements), 1.0f);
-    float* d_input = nullptr;
-    float* d_output = nullptr;
-    float* d_reference = nullptr;
+TEST_F(PtxTransposeTest, test_transpose_vector_matches_reference_on_gpu) {
+    expect_matches_reference(launch_transpose_ptx_vector, 2048, 2048, 131);
+}
 
-    ASSERT_CUDA_SUCCESS(cudaMalloc(&d_input, elements * sizeof(float)));
-    ASSERT_CUDA_SUCCESS(cudaMalloc(&d_output, elements * sizeof(float)));
-    ASSERT_CUDA_SUCCESS(cudaMalloc(&d_reference, elements * sizeof(float)));
-    ASSERT_CUDA_SUCCESS(cudaMemcpy(
-        d_input, host_input.data(), elements * sizeof(float), cudaMemcpyHostToDevice));
+TEST_F(PtxTransposeTest, test_transpose_swizzle_matches_reference_on_gpu) {
+    expect_matches_reference(launch_transpose_ptx_swizzle, 3000, 5000, 251);
+}
 
-    ASSERT_CUDA_SUCCESS(launch_reference_transpose(d_input, d_reference, rows, cols));
-    ASSERT_CUDA_SUCCESS(launch_transpose_ptx_opt(d_input, d_output, rows, cols));
-    ASSERT_CUDA_SUCCESS(cudaDeviceSynchronize());
+TEST_F(PtxTransposeTest, test_transpose_cpasync_matches_reference_on_gpu) {
+    expect_matches_reference(launch_transpose_ptx_cpasync, 2048, 4096, 193);
+}
 
-    EXPECT_EQ(count_mismatches(d_output, d_reference, elements), 0);
+TEST_F(PtxTransposeTest, test_transpose_vswizzle_matches_reference_on_gpu) {
+    expect_matches_reference(launch_transpose_ptx_vswizzle, 2048, 4096, 193);
+}
 
-    cudaFree(d_reference);
-    cudaFree(d_output);
-    cudaFree(d_input);
+TEST_F(PtxTransposeTest, test_transpose_swizzle16_matches_reference_on_gpu) {
+    expect_matches_reference(launch_transpose_ptx_swizzle16, 3000, 5000, 251);
 }
 
 }  // namespace cpm
