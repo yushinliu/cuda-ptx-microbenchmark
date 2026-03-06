@@ -53,6 +53,7 @@ ctest --output-on-failure
 # Run specific test suites
 ./tests/unit_tests
 ./tests/integration_tests --gtest_filter="*L1Cache*"
+./tests/integration_tests --gtest_filter="*Transpose*"
 ./tests/e2e_tests
 
 # Run new microbenchmark tests
@@ -65,6 +66,7 @@ ctest --output-on-failure
 
 ```bash
 ./cpm
+./transpose_benchmark 4096 4096 20 80
 ```
 
 ## Project Structure

@@ -30,7 +30,8 @@ int main(int /* argc */, char** /* argv */) {
 
     print_device_info();
 
-    // TODO: Run benchmark suite based on command line arguments
+    std::cout << "\nAvailable benchmark executables:" << std::endl;
+    std::cout << "  ./transpose_benchmark [rows] [cols] [warmup] [iters]" << std::endl;
 
     return 0;
 }

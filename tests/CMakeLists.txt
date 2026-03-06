@@ -37,6 +37,9 @@ set_target_properties(unit_tests PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
 )
 add_test(NAME UnitTests COMMAND unit_tests)
+if(NOT MSVC)
+    target_link_options(unit_tests PRIVATE -no-pie)
+endif()
 
 # Integration tests
 add_executable(integration_tests
@@ -44,6 +47,7 @@ add_executable(integration_tests
     integration/test_l2_cache.cu
     integration/test_ptx_instructions.cu
     integration/test_memory_bandwidth.cu
+    integration/test_transpose_ptx.cu
 )
 target_include_directories(integration_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/tests
@@ -58,6 +62,9 @@ set_target_properties(integration_tests PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
 )
 add_test(NAME IntegrationTests COMMAND integration_tests)
+if(NOT MSVC)
+    target_link_options(integration_tests PRIVATE -no-pie)
+endif()
 
 # E2E tests
 add_executable(e2e_tests
@@ -77,6 +84,9 @@ set_target_properties(e2e_tests PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
 )
 add_test(NAME E2ETests COMMAND e2e_tests)
+if(NOT MSVC)
+    target_link_options(e2e_tests PRIVATE -no-pie)
+endif()
 
 # Microbenchmark tests (new TDD-based tests)
 # Include kernel sources directly to ensure proper CUDA linking
@@ -119,6 +129,9 @@ set_target_properties(microbench_tests PROPERTIES
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
 )
 add_test(NAME MicrobenchTests COMMAND microbench_tests)
+if(NOT MSVC)
+    target_link_options(microbench_tests PRIVATE -no-pie)
+endif()
 
 # Test labels for selective running
 set_tests_properties(UnitTests PROPERTIES LABELS "unit")

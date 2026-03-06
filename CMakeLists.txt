@@ -58,6 +58,7 @@ add_library(cpm_kernels STATIC
     src/kernels/ptx/arithmetic.cu
     src/kernels/ptx/memory_ptx.cu
     src/kernels/ptx/synchronization.cu
+    src/kernels/ptx/transpose.cu
     src/kernels/microbench/integer_instructions.cu
     src/kernels/microbench/double_precision.cu
     src/kernels/microbench/l2_cache.cu
@@ -73,6 +74,18 @@ set_target_properties(cpm_kernels PROPERTIES
 # Main executable
 add_executable(cpm src/main.cpp)
 target_link_libraries(cpm PRIVATE cpm_core cpm_kernels)
+if(NOT MSVC)
+    target_link_options(cpm PRIVATE -no-pie)
+endif()
+
+add_executable(transpose_benchmark src/transpose_benchmark.cu)
+target_link_libraries(transpose_benchmark PRIVATE cpm_core cpm_kernels)
+set_target_properties(transpose_benchmark PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+)
+if(NOT MSVC)
+    target_link_options(transpose_benchmark PRIVATE -no-pie)
+endif()
 
 # Testing
 if(ENABLE_TESTING)
@@ -81,5 +94,6 @@ endif()
 
 # Install targets
 install(TARGETS cpm DESTINATION bin)
+install(TARGETS transpose_benchmark DESTINATION bin)
 install(TARGETS cpm_core cpm_kernels DESTINATION lib)
 install(DIRECTORY include/ DESTINATION include)
