@@ -151,6 +151,39 @@ Important note:
 - On 2048, the latest vectorized-`B` hybrid run shifted the best custom result to `matmul_mma_ldmatrix_block_cpasync_a` at `0.4287 ms`
 - The gap to PyTorch remains large, but the best custom path is no longer uniformly the WMMA fast path at every shape
 
+## Power-Of-Two Sweep
+
+Source: `pow2_sweep.json`
+
+Square GEMM sizes swept on GPU:
+
+- `256^3`
+- `512^3`
+- `1024^3`
+- `2048^3`
+- `4096^3`
+- `8192^3`
+
+| Shape | PyTorch med ms | PTX cp.async med ms | PTX hybrid med ms | Best custom impl |
+| --- | ---: | ---: | ---: | --- |
+| 256x256x256 | 0.0408 | 0.0120 | 0.0154 | `ptx_mma_cpasync` |
+| 512x512x512 | 0.0224 | 0.0203 | 0.0284 | `ptx_mma_cpasync` |
+| 1024x1024x1024 | 0.0471 | 0.0737 | 0.0838 | `ptx_mma_cpasync` |
+| 2048x2048x2048 | 0.2691 | 0.4475 | 0.4710 | `ptx_mma_cpasync` |
+| 4096x4096x4096 | 2.0028 | 3.2220 | 3.2444 | `ptx_mma_cpasync` |
+| 8192x8192x8192 | 15.3358 | 29.2485 | 32.8504 | `ptx_mma_cpasync` |
+
+Trend summary:
+
+- the custom kernels remain competitive only at the smallest sizes, where launch overhead dominates more heavily
+- from `1024^3` upward, PyTorch opens a clear and persistent lead
+- the hybrid `ldmatrix` path no longer wins the large-shape sweep once the test is broadened to `2048`, `4096`, and `8192`
+- this suggests the earlier `2048` single-run hybrid win was real for that run, but not robust across broader repeated sweep conditions
+
+Median runtime line chart:
+
+![Power-of-two GEMM sweep](pow2_sweep_median_ms.svg)
+
 ## Experimental `ldmatrix` Benchmark
 
 Source: `bench_ldmatrix_*.json`
@@ -454,3 +487,8 @@ There is still clear optimization headroom, but it likely requires a more aggres
   - `results/bench_bvec_final_2048.json`
   - `results/bench_bvec_stage3_1024.json`
   - `results/bench_bvec_stage3_2048.json`
+  - `results/pow2_sweep.json`
+  - `results/pow2_sweep_median_ms.svg`
+- Scripts:
+  - `sweep_matmul_pow2.py`
+  - `plot_pow2_sweep.py`
