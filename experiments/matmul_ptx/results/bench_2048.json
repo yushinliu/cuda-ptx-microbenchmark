@@ -1,0 +1,44 @@
+[
+  {
+    "impl": "pytorch_mm_out_fp32",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.36443686250038354,
+    "min_ms": 0.2999509999881411,
+    "max_ms": 0.889797000127146,
+    "tflops": 47.140865680079
+  },
+  {
+    "impl": "ptx_mma",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 1.8415454499972839,
+    "min_ms": 1.354410999965694,
+    "max_ms": 3.1939769999098644,
+    "tflops": 9.329049784801855
+  },
+  {
+    "impl": "ptx_mma_cpasync",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 1.3341556375024766,
+    "min_ms": 1.1239699999805453,
+    "max_ms": 2.0571889999700943,
+    "tflops": 12.876960304391854
+  }
+]
