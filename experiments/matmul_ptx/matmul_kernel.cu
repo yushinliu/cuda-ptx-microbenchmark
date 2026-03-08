@@ -1,6 +1,7 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <cutlass/arch/mma_sm80.h>
+#include <cutlass/gemm/warp/default_mma_tensor_op.h>
 #include <cutlass/gemm/warp/mma_tensor_op.h>
 #include <cutlass/layout/matrix.h>
 #include <cutlass/layout/tensor_op_multiplicand_sm75.h>
@@ -31,6 +32,14 @@ constexpr int kAChunks = kABytesPerStage / kVecBytes;
 constexpr int kBChunks = kBBytesPerStage / kVecBytes;
 constexpr int kAChunksPerRow = (kBlockK * static_cast<int>(sizeof(half))) / kVecBytes;
 constexpr int kBChunksPerRow = (kBlockN * static_cast<int>(sizeof(half))) / kVecBytes;
+constexpr int kBlockK32 = 32;
+constexpr int kStagesK32 = 2;
+constexpr int kABytesPerStageK32 = kBlockM * kBlockK32 * static_cast<int>(sizeof(half));
+constexpr int kBBytesPerStageK32 = kBlockK32 * kBlockN * static_cast<int>(sizeof(half));
+constexpr int kAChunksK32 = kABytesPerStageK32 / kVecBytes;
+constexpr int kBChunksK32 = kBBytesPerStageK32 / kVecBytes;
+constexpr int kAChunksPerRowK32 = (kBlockK32 * static_cast<int>(sizeof(half))) / kVecBytes;
+constexpr int kBChunksPerRowK32 = (kBlockN * static_cast<int>(sizeof(half))) / kVecBytes;
 
 constexpr int kSmallBlockM = 64;
 constexpr int kSmallBlockN = 64;
@@ -50,6 +59,7 @@ constexpr int kLdmatrixTileM = 16;
 constexpr int kLdmatrixTileN = 8;
 constexpr int kLdmatrixTileK = 16;
 constexpr int kLdmatrixThreadsPerBlock = 32;
+constexpr int kLdmatrixBlockStages = 2;
 
 using CutlassHalf = cutlass::half_t;
 using LdmatrixWarpShape = cutlass::gemm::GemmShape<kLdmatrixTileM, kLdmatrixTileN, kLdmatrixTileK>;
@@ -80,6 +90,22 @@ using LdmatrixWarpMma = cutlass::gemm::warp::MmaTensorOp<
     float,
     cutlass::layout::RowMajor,
     LdmatrixPolicy>;
+using LdmatrixBlockSmemLayoutA = cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<
+    cutlass::sizeof_bits<CutlassHalf>::value,
+    kBlockK>;
+using LdmatrixBlockSmemLayoutB = cutlass::layout::ColumnMajorTensorOpMultiplicandCrosswise<
+    cutlass::sizeof_bits<CutlassHalf>::value,
+    kBlockK>;
+using LdmatrixBlockWarpShape = cutlass::gemm::GemmShape<32, 32, kBlockK>;
+using LdmatrixBlockWarpMma = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+    LdmatrixBlockWarpShape,
+    cutlass::gemm::GemmShape<16, 8, 16>,
+    CutlassHalf,
+    LdmatrixBlockSmemLayoutA,
+    CutlassHalf,
+    LdmatrixBlockSmemLayoutB,
+    float,
+    cutlass::layout::RowMajor>::Type;
 
 using AccumulatorFragment = wmma::fragment<wmma::accumulator, kWmmaM, kWmmaN, kWmmaK, float>;
 using MatrixAFragment = wmma::fragment<wmma::matrix_a, kWmmaM, kWmmaN, kWmmaK, half, wmma::row_major>;
@@ -128,6 +154,27 @@ __device__ __forceinline__ void cp_async_wait() {
 
 __device__ __forceinline__ void zero_vec4(void* dst) {
     *reinterpret_cast<uint4*>(dst) = make_uint4(0u, 0u, 0u, 0u);
+}
+
+template <typename Layout>
+__device__ __forceinline__ void store_b_row_chunk(
+    CutlassHalf* dst,
+    Layout const& layout,
+    int row,
+    int col,
+    uint4 packed) {
+    const uint32_t w0 = packed.x;
+    const uint32_t w1 = packed.y;
+    const uint32_t w2 = packed.z;
+    const uint32_t w3 = packed.w;
+    dst[layout({row, col + 0})] = CutlassHalf::bitcast(static_cast<uint16_t>(w0 & 0xffffu));
+    dst[layout({row, col + 1})] = CutlassHalf::bitcast(static_cast<uint16_t>(w0 >> 16));
+    dst[layout({row, col + 2})] = CutlassHalf::bitcast(static_cast<uint16_t>(w1 & 0xffffu));
+    dst[layout({row, col + 3})] = CutlassHalf::bitcast(static_cast<uint16_t>(w1 >> 16));
+    dst[layout({row, col + 4})] = CutlassHalf::bitcast(static_cast<uint16_t>(w2 & 0xffffu));
+    dst[layout({row, col + 5})] = CutlassHalf::bitcast(static_cast<uint16_t>(w2 >> 16));
+    dst[layout({row, col + 6})] = CutlassHalf::bitcast(static_cast<uint16_t>(w3 & 0xffffu));
+    dst[layout({row, col + 7})] = CutlassHalf::bitcast(static_cast<uint16_t>(w3 >> 16));
 }
 
 __global__ void matmul_mma_ldmatrix_kernel(
@@ -201,6 +248,204 @@ __global__ void matmul_mma_ldmatrix_kernel(
     }
 
     TensorRefC ref_c(c + tile_row * n + tile_col, n);
+    IteratorC iter_c(ref_c, lane_id);
+    iter_c.store(accum);
+}
+
+__global__ void matmul_mma_ldmatrix_block_kernel(
+    const half* __restrict__ a,
+    const half* __restrict__ b,
+    float* __restrict__ c,
+    int64_t m,
+    int64_t n,
+    int64_t k) {
+    __shared__ alignas(16) CutlassHalf smem_a[kBlockM * kBlockK];
+    __shared__ alignas(16) CutlassHalf smem_b[kBlockK * kBlockN];
+
+    const int warp_id = threadIdx.x >> 5;
+    const int lane_id = threadIdx.x & 31;
+    const int warp_m = warp_id / kWarpCols;
+    const int warp_n = warp_id % kWarpCols;
+
+    const int block_row = static_cast<int>(blockIdx.y) * kBlockM;
+    const int block_col = static_cast<int>(blockIdx.x) * kBlockN;
+
+    using FragmentA = typename LdmatrixBlockWarpMma::FragmentA;
+    using FragmentB = typename LdmatrixBlockWarpMma::FragmentB;
+    using FragmentC = typename LdmatrixBlockWarpMma::FragmentC;
+    using TransformedFragmentA = typename LdmatrixBlockWarpMma::TransformedFragmentA;
+    using TransformedFragmentB = typename LdmatrixBlockWarpMma::TransformedFragmentB;
+    using IteratorA = typename LdmatrixBlockWarpMma::IteratorA;
+    using IteratorB = typename LdmatrixBlockWarpMma::IteratorB;
+    using IteratorC = typename LdmatrixBlockWarpMma::IteratorC;
+    using TensorRefA = typename IteratorA::TensorRef;
+    using TensorRefB = typename IteratorB::TensorRef;
+    using TensorRefC = typename IteratorC::TensorRef;
+
+    const auto smem_layout_a = LdmatrixBlockSmemLayoutA::packed({kBlockM, kBlockK});
+    const auto smem_layout_b = LdmatrixBlockSmemLayoutB::packed({kBlockK, kBlockN});
+    TensorRefA ref_a(smem_a, smem_layout_a);
+    TensorRefB ref_b(smem_b, smem_layout_b);
+    LdmatrixBlockWarpMma mma;
+
+    FragmentC accum;
+    #pragma unroll
+    for (int i = 0; i < FragmentC::kElements; ++i) {
+        accum[i] = 0.0f;
+    }
+
+    const CutlassHalf* a_cutlass = reinterpret_cast<const CutlassHalf*>(a);
+    const int warp_row = warp_m * LdmatrixBlockWarpShape::kM;
+    const int warp_col = warp_n * LdmatrixBlockWarpShape::kN;
+
+    for (int k0 = 0; k0 < k; k0 += kBlockK) {
+        for (int idx = threadIdx.x; idx < kBlockM * kBlockK; idx += blockDim.x) {
+            const int row = idx / kBlockK;
+            const int col = idx % kBlockK;
+            ref_a.at({row, col}) = a_cutlass[(block_row + row) * k + (k0 + col)];
+        }
+
+        for (int chunk = threadIdx.x; chunk < kBChunks; chunk += blockDim.x) {
+            const int row = chunk / kBChunksPerRow;
+            const int col = (chunk % kBChunksPerRow) * (kVecBytes / static_cast<int>(sizeof(half)));
+            const uint4 packed = *reinterpret_cast<uint4 const*>(b + (k0 + row) * n + block_col + col);
+            store_b_row_chunk(smem_b, smem_layout_b, row, col, packed);
+        }
+
+        __syncthreads();
+
+        const auto warp_a_offset = smem_layout_a({warp_row, 0});
+        const auto warp_b_offset = smem_layout_b({0, warp_col});
+        TensorRefA warp_ref_a(smem_a + warp_a_offset, smem_layout_a);
+        TensorRefB warp_ref_b(smem_b + warp_b_offset, smem_layout_b);
+        IteratorA iter_a(warp_ref_a, lane_id);
+        IteratorB iter_b(warp_ref_b, lane_id);
+
+        FragmentA frag_a;
+        FragmentB frag_b;
+        TransformedFragmentA frag_a_mma;
+        TransformedFragmentB frag_b_mma;
+        iter_a.load(frag_a);
+        iter_b.load(frag_b);
+        mma.transform(frag_a_mma, frag_b_mma, frag_a, frag_b);
+        mma(accum, frag_a_mma, frag_b_mma, accum);
+
+        __syncthreads();
+    }
+
+    TensorRefC ref_c(c + (block_row + warp_row) * n + block_col + warp_col, n);
+    IteratorC iter_c(ref_c, lane_id);
+    iter_c.store(accum);
+}
+
+__global__ void matmul_mma_ldmatrix_block_cpasync_a_kernel(
+    const half* __restrict__ a,
+    const half* __restrict__ b,
+    float* __restrict__ c,
+    int64_t m,
+    int64_t n,
+    int64_t k) {
+    __shared__ uint4 smem_a_raw[kLdmatrixBlockStages][kAChunks];
+    __shared__ alignas(16) CutlassHalf smem_b[kLdmatrixBlockStages][kBlockK * kBlockN];
+
+    const int warp_id = threadIdx.x >> 5;
+    const int lane_id = threadIdx.x & 31;
+    const int warp_m = warp_id / kWarpCols;
+    const int warp_n = warp_id % kWarpCols;
+
+    const int block_row = static_cast<int>(blockIdx.y) * kBlockM;
+    const int block_col = static_cast<int>(blockIdx.x) * kBlockN;
+    const int stage_count = static_cast<int>(k / kBlockK);
+
+    using FragmentA = typename LdmatrixBlockWarpMma::FragmentA;
+    using FragmentB = typename LdmatrixBlockWarpMma::FragmentB;
+    using FragmentC = typename LdmatrixBlockWarpMma::FragmentC;
+    using TransformedFragmentA = typename LdmatrixBlockWarpMma::TransformedFragmentA;
+    using TransformedFragmentB = typename LdmatrixBlockWarpMma::TransformedFragmentB;
+    using IteratorA = typename LdmatrixBlockWarpMma::IteratorA;
+    using IteratorB = typename LdmatrixBlockWarpMma::IteratorB;
+    using IteratorC = typename LdmatrixBlockWarpMma::IteratorC;
+    using TensorRefA = typename IteratorA::TensorRef;
+    using TensorRefB = typename IteratorB::TensorRef;
+    using TensorRefC = typename IteratorC::TensorRef;
+
+    const auto smem_layout_a = LdmatrixBlockSmemLayoutA::packed({kBlockM, kBlockK});
+    const auto smem_layout_b = LdmatrixBlockSmemLayoutB::packed({kBlockK, kBlockN});
+    LdmatrixBlockWarpMma mma;
+
+    FragmentC accum;
+    #pragma unroll
+    for (int i = 0; i < FragmentC::kElements; ++i) {
+        accum[i] = 0.0f;
+    }
+
+    const CutlassHalf* b_cutlass = reinterpret_cast<const CutlassHalf*>(b);
+    const int warp_row = warp_m * LdmatrixBlockWarpShape::kM;
+    const int warp_col = warp_n * LdmatrixBlockWarpShape::kN;
+
+    auto load_stage = [&](int stage_idx, int k0) {
+        for (int chunk = threadIdx.x; chunk < kAChunks; chunk += blockDim.x) {
+            const int row = chunk / kAChunksPerRow;
+            const int col = (chunk % kAChunksPerRow) * (kVecBytes / static_cast<int>(sizeof(half)));
+            const int elem_offset = static_cast<int>(smem_layout_a({row, col}));
+            void* dst = ptr_add_bytes(reinterpret_cast<void*>(&smem_a_raw[stage_idx][0]), elem_offset * static_cast<int>(sizeof(half)));
+            const half* src = a + (block_row + row) * k + k0 + col;
+            cp_async_copy_16(dst, src);
+        }
+
+        for (int chunk = threadIdx.x; chunk < kBChunks; chunk += blockDim.x) {
+            const int row = chunk / kBChunksPerRow;
+            const int col = (chunk % kBChunksPerRow) * (kVecBytes / static_cast<int>(sizeof(half)));
+            const uint4 packed = *reinterpret_cast<uint4 const*>(b + (k0 + row) * n + block_col + col);
+            store_b_row_chunk(smem_b[stage_idx], smem_layout_b, row, col, packed);
+        }
+
+        cp_async_commit();
+    };
+
+    const int preload_count = stage_count < (kLdmatrixBlockStages - 1) ? stage_count : (kLdmatrixBlockStages - 1);
+    for (int preload = 0; preload < preload_count; ++preload) {
+        load_stage(preload, preload * kBlockK);
+    }
+    if (preload_count > 0) {
+        cp_async_wait<0>();
+        __syncthreads();
+    }
+
+    for (int stage = 0; stage < stage_count; ++stage) {
+        const int curr = stage % kLdmatrixBlockStages;
+        const int preload_stage = stage + preload_count;
+        if (preload_stage < stage_count) {
+            load_stage(preload_stage % kLdmatrixBlockStages, preload_stage * kBlockK);
+        }
+
+        TensorRefA stage_ref_a(reinterpret_cast<CutlassHalf*>(&smem_a_raw[curr][0]), smem_layout_a);
+        TensorRefB stage_ref_b(smem_b[curr], smem_layout_b);
+        const auto warp_a_offset = smem_layout_a({warp_row, 0});
+        const auto warp_b_offset = smem_layout_b({0, warp_col});
+        TensorRefA warp_ref_a(reinterpret_cast<CutlassHalf*>(&smem_a_raw[curr][0]) + warp_a_offset, smem_layout_a);
+        TensorRefB warp_ref_b(smem_b[curr] + warp_b_offset, smem_layout_b);
+        (void)stage_ref_a;
+        (void)stage_ref_b;
+
+        IteratorA iter_a(warp_ref_a, lane_id);
+        IteratorB iter_b(warp_ref_b, lane_id);
+        FragmentA frag_a;
+        FragmentB frag_b;
+        TransformedFragmentA frag_a_mma;
+        TransformedFragmentB frag_b_mma;
+        iter_a.load(frag_a);
+        iter_b.load(frag_b);
+        mma.transform(frag_a_mma, frag_b_mma, frag_a, frag_b);
+        mma(accum, frag_a_mma, frag_b_mma, accum);
+
+        if (preload_stage < stage_count) {
+            cp_async_wait<0>();
+            __syncthreads();
+        }
+    }
+
+    TensorRefC ref_c(c + (block_row + warp_row) * n + block_col + warp_col, n);
     IteratorC iter_c(ref_c, lane_id);
     iter_c.store(accum);
 }
@@ -515,6 +760,105 @@ __global__ void matmul_mma_cpasync_fast_kernel(
     wmma::store_matrix_sync(c + warp_row1 * n + warp_col1, acc11, n, wmma::mem_row_major);
 }
 
+__global__ void matmul_mma_cpasync_k32_fast_kernel(
+    const half* __restrict__ a,
+    const half* __restrict__ b,
+    float* __restrict__ c,
+    int64_t m,
+    int64_t n,
+    int64_t k) {
+    __shared__ uint4 smem_a_raw[kStagesK32][kAChunksK32];
+    __shared__ uint4 smem_b_raw[kStagesK32][kBChunksK32];
+    const int warp_id = threadIdx.x >> 5;
+    const int warp_m = warp_id / kWarpCols;
+    const int warp_n = warp_id % kWarpCols;
+
+    const int block_row = static_cast<int>(blockIdx.y) * kBlockM;
+    const int block_col = static_cast<int>(blockIdx.x) * kBlockN;
+    const int stage_count = static_cast<int>(k / kBlockK32);
+
+    auto load_stage = [&](int stage_idx, int k0) {
+        for (int chunk = threadIdx.x; chunk < kAChunksK32; chunk += blockDim.x) {
+            const int row = chunk / kAChunksPerRowK32;
+            const int col = (chunk % kAChunksPerRowK32) * (kVecBytes / static_cast<int>(sizeof(half)));
+            void* dst = &smem_a_raw[stage_idx][chunk];
+            const half* src = a + (block_row + row) * k + k0 + col;
+            cp_async_copy_16(dst, src);
+        }
+
+        for (int chunk = threadIdx.x; chunk < kBChunksK32; chunk += blockDim.x) {
+            const int row = chunk / kBChunksPerRowK32;
+            const int col = (chunk % kBChunksPerRowK32) * (kVecBytes / static_cast<int>(sizeof(half)));
+            void* dst = &smem_b_raw[stage_idx][chunk];
+            const half* src = b + (k0 + row) * n + block_col + col;
+            cp_async_copy_16(dst, src);
+        }
+        cp_async_commit();
+    };
+
+    AccumulatorFragment acc00;
+    AccumulatorFragment acc01;
+    AccumulatorFragment acc10;
+    AccumulatorFragment acc11;
+    wmma::fill_fragment(acc00, 0.0f);
+    wmma::fill_fragment(acc01, 0.0f);
+    wmma::fill_fragment(acc10, 0.0f);
+    wmma::fill_fragment(acc11, 0.0f);
+
+    const int preload_count = stage_count < (kStagesK32 - 1) ? stage_count : (kStagesK32 - 1);
+    for (int preload = 0; preload < preload_count; ++preload) {
+        load_stage(preload, preload * kBlockK32);
+    }
+    if (preload_count > 0) {
+        cp_async_wait<0>();
+        __syncthreads();
+    }
+
+    for (int stage = 0; stage < stage_count; ++stage) {
+        const int curr = stage % kStagesK32;
+        const int preload_stage = stage + preload_count;
+        if (preload_stage < stage_count) {
+            load_stage(preload_stage % kStagesK32, preload_stage * kBlockK32);
+        }
+
+        const int row_base = warp_m * (2 * kWmmaM);
+        const int col_base = warp_n * (2 * kWmmaN);
+        #pragma unroll
+        for (int kk = 0; kk < kBlockK32; kk += kWmmaK) {
+            MatrixAFragment a_frag0;
+            MatrixAFragment a_frag1;
+            MatrixBFragment b_frag0;
+            MatrixBFragment b_frag1;
+            const half* a_tile0 = ptr_add_bytes(reinterpret_cast<half*>(&smem_a_raw[curr][0]), ((row_base + 0) * kBlockK32 + kk) * static_cast<int>(sizeof(half)));
+            const half* a_tile1 = ptr_add_bytes(reinterpret_cast<half*>(&smem_a_raw[curr][0]), ((row_base + kWmmaM) * kBlockK32 + kk) * static_cast<int>(sizeof(half)));
+            const half* b_tile0 = ptr_add_bytes(reinterpret_cast<half*>(&smem_b_raw[curr][0]), (kk * kBlockN + col_base + 0) * static_cast<int>(sizeof(half)));
+            const half* b_tile1 = ptr_add_bytes(reinterpret_cast<half*>(&smem_b_raw[curr][0]), (kk * kBlockN + col_base + kWmmaN) * static_cast<int>(sizeof(half)));
+            wmma::load_matrix_sync(a_frag0, a_tile0, kBlockK32);
+            wmma::load_matrix_sync(a_frag1, a_tile1, kBlockK32);
+            wmma::load_matrix_sync(b_frag0, b_tile0, kBlockN);
+            wmma::load_matrix_sync(b_frag1, b_tile1, kBlockN);
+            mma_sync_16x16(acc00, a_frag0, b_frag0);
+            mma_sync_16x16(acc01, a_frag0, b_frag1);
+            mma_sync_16x16(acc10, a_frag1, b_frag0);
+            mma_sync_16x16(acc11, a_frag1, b_frag1);
+        }
+
+        if (preload_stage < stage_count) {
+            cp_async_wait<0>();
+            __syncthreads();
+        }
+    }
+
+    const int warp_row0 = block_row + warp_m * (2 * kWmmaM);
+    const int warp_row1 = warp_row0 + kWmmaM;
+    const int warp_col0 = block_col + warp_n * (2 * kWmmaN);
+    const int warp_col1 = warp_col0 + kWmmaN;
+    wmma::store_matrix_sync(c + warp_row0 * n + warp_col0, acc00, n, wmma::mem_row_major);
+    wmma::store_matrix_sync(c + warp_row0 * n + warp_col1, acc01, n, wmma::mem_row_major);
+    wmma::store_matrix_sync(c + warp_row1 * n + warp_col0, acc10, n, wmma::mem_row_major);
+    wmma::store_matrix_sync(c + warp_row1 * n + warp_col1, acc11, n, wmma::mem_row_major);
+}
+
 __global__ void matmul_mma_cpasync_small_kernel(
     const half* __restrict__ a,
     const half* __restrict__ b,
@@ -668,6 +1012,26 @@ extern "C" cudaError_t launch_matmul_ptx_mma_cpasync(
     return cudaGetLastError();
 }
 
+extern "C" cudaError_t launch_matmul_ptx_mma_cpasync_k32(
+    const half* a,
+    const half* b,
+    float* c,
+    int64_t m,
+    int64_t n,
+    int64_t k,
+    cudaStream_t stream) {
+    dim3 block(kThreadsPerBlock);
+    dim3 grid(
+        static_cast<unsigned int>((n + kBlockN - 1) / kBlockN),
+        static_cast<unsigned int>((m + kBlockM - 1) / kBlockM));
+    if ((m % kBlockM) == 0 && (n % kBlockN) == 0 && (k % kBlockK32) == 0) {
+        matmul_mma_cpasync_k32_fast_kernel<<<grid, block, 0, stream>>>(a, b, c, m, n, k);
+    } else {
+        matmul_mma_cpasync_kernel<<<grid, block, 0, stream>>>(a, b, c, m, n, k);
+    }
+    return cudaGetLastError();
+}
+
 extern "C" cudaError_t launch_matmul_ptx_mma_ldmatrix(
     const half* a,
     const half* b,
@@ -681,5 +1045,53 @@ extern "C" cudaError_t launch_matmul_ptx_mma_ldmatrix(
         static_cast<unsigned int>((n + kLdmatrixTileN - 1) / kLdmatrixTileN),
         static_cast<unsigned int>((m + kLdmatrixTileM - 1) / kLdmatrixTileM));
     matmul_mma_ldmatrix_kernel<<<grid, block, 0, stream>>>(a, b, c, m, n, k);
+    return cudaGetLastError();
+}
+
+extern "C" cudaError_t launch_matmul_ptx_mma_ldmatrix_block(
+    const half* a,
+    const half* b,
+    float* c,
+    int64_t m,
+    int64_t n,
+    int64_t k,
+    cudaStream_t stream) {
+    dim3 block(kThreadsPerBlock);
+    dim3 grid(
+        static_cast<unsigned int>((n + kBlockN - 1) / kBlockN),
+        static_cast<unsigned int>((m + kBlockM - 1) / kBlockM));
+    if ((m % kBlockM) == 0 && (n % kBlockN) == 0) {
+        matmul_mma_ldmatrix_block_kernel<<<grid, block, 0, stream>>>(a, b, c, m, n, k);
+    } else {
+        dim3 fallback_block(kLdmatrixThreadsPerBlock);
+        dim3 fallback_grid(
+            static_cast<unsigned int>((n + kLdmatrixTileN - 1) / kLdmatrixTileN),
+            static_cast<unsigned int>((m + kLdmatrixTileM - 1) / kLdmatrixTileM));
+        matmul_mma_ldmatrix_kernel<<<fallback_grid, fallback_block, 0, stream>>>(a, b, c, m, n, k);
+    }
+    return cudaGetLastError();
+}
+
+extern "C" cudaError_t launch_matmul_ptx_mma_ldmatrix_block_cpasync_a(
+    const half* a,
+    const half* b,
+    float* c,
+    int64_t m,
+    int64_t n,
+    int64_t k,
+    cudaStream_t stream) {
+    if ((m % kBlockM) == 0 && (n % kBlockN) == 0) {
+        dim3 block(kThreadsPerBlock);
+        dim3 grid(
+            static_cast<unsigned int>((n + kBlockN - 1) / kBlockN),
+            static_cast<unsigned int>((m + kBlockM - 1) / kBlockM));
+        matmul_mma_ldmatrix_block_cpasync_a_kernel<<<grid, block, 0, stream>>>(a, b, c, m, n, k);
+    } else {
+        dim3 block(kLdmatrixThreadsPerBlock);
+        dim3 grid(
+            static_cast<unsigned int>((n + kLdmatrixTileN - 1) / kLdmatrixTileN),
+            static_cast<unsigned int>((m + kLdmatrixTileM - 1) / kLdmatrixTileM));
+        matmul_mma_ldmatrix_kernel<<<grid, block, 0, stream>>>(a, b, c, m, n, k);
+    }
     return cudaGetLastError();
 }

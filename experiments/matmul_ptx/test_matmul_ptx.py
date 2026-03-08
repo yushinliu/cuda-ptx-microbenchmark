@@ -1,7 +1,15 @@
 import pytest
 import torch
 
-from matmul_ext import load_ext, matmul_mma, matmul_mma_cpasync, matmul_mma_ldmatrix
+from matmul_ext import (
+    load_ext,
+    matmul_mma,
+    matmul_mma_cpasync,
+    matmul_mma_cpasync_k32,
+    matmul_mma_ldmatrix,
+    matmul_mma_ldmatrix_block,
+    matmul_mma_ldmatrix_block_cpasync_a,
+)
 
 
 def torch_mm_fp32(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
@@ -25,18 +33,30 @@ def test_matmul_correctness_against_pytorch(shape):
 
     y_mma = matmul_mma(a, b)
     y_cpasync = matmul_mma_cpasync(a, b)
+    y_cpasync_k32 = matmul_mma_cpasync_k32(a, b)
     y_ldmatrix = matmul_mma_ldmatrix(a, b)
+    y_ldmatrix_block = matmul_mma_ldmatrix_block(a, b)
+    y_ldmatrix_block_cpasync_a = matmul_mma_ldmatrix_block_cpasync_a(a, b)
 
     assert y_mma.dtype == torch.float32
     assert y_cpasync.dtype == torch.float32
+    assert y_cpasync_k32.dtype == torch.float32
     assert y_ldmatrix.dtype == torch.float32
+    assert y_ldmatrix_block.dtype == torch.float32
+    assert y_ldmatrix_block_cpasync_a.dtype == torch.float32
 
     max_abs_err_mma = (y_mma - ref).abs().max().item()
     max_abs_err_cpasync = (y_cpasync - ref).abs().max().item()
+    max_abs_err_cpasync_k32 = (y_cpasync_k32 - ref).abs().max().item()
     max_abs_err_ldmatrix = (y_ldmatrix - ref).abs().max().item()
+    max_abs_err_ldmatrix_block = (y_ldmatrix_block - ref).abs().max().item()
+    max_abs_err_ldmatrix_block_cpasync_a = (y_ldmatrix_block_cpasync_a - ref).abs().max().item()
     assert max_abs_err_mma <= 1e-2
     assert max_abs_err_cpasync <= 1e-2
+    assert max_abs_err_cpasync_k32 <= 1e-2
     assert max_abs_err_ldmatrix <= 1e-2
+    assert max_abs_err_ldmatrix_block <= 1e-2
+    assert max_abs_err_ldmatrix_block_cpasync_a <= 1e-2
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA GPU is required")

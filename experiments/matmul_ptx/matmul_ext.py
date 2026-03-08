@@ -47,5 +47,17 @@ def matmul_mma_cpasync(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
     return load_ext().matmul_mma_cpasync(x, w)
 
 
+def matmul_mma_cpasync_k32(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+    return load_ext().matmul_mma_cpasync_k32(x, w)
+
+
 def matmul_mma_ldmatrix(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
     return load_ext().matmul_mma_ldmatrix(x, w)
+
+
+def matmul_mma_ldmatrix_block(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+    return load_ext().matmul_mma_ldmatrix_block(x, w)
+
+
+def matmul_mma_ldmatrix_block_cpasync_a(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+    return load_ext().matmul_mma_ldmatrix_block_cpasync_a(x, w)

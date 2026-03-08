@@ -4,7 +4,14 @@ import argparse
 
 import torch
 
-from matmul_ext import matmul_mma, matmul_mma_cpasync, matmul_mma_ldmatrix
+from matmul_ext import (
+    matmul_mma,
+    matmul_mma_cpasync,
+    matmul_mma_cpasync_k32,
+    matmul_mma_ldmatrix,
+    matmul_mma_ldmatrix_block,
+    matmul_mma_ldmatrix_block_cpasync_a,
+)
 
 
 def torch_mm_fp32(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
@@ -18,14 +25,24 @@ def run_once(impl: str, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         return matmul_mma(a, b)
     if impl == "cpasync":
         return matmul_mma_cpasync(a, b)
+    if impl == "cpasync_k32":
+        return matmul_mma_cpasync_k32(a, b)
     if impl == "ldmatrix":
         return matmul_mma_ldmatrix(a, b)
+    if impl == "ldmatrix_block":
+        return matmul_mma_ldmatrix_block(a, b)
+    if impl == "ldmatrix_block_cpasync_a":
+        return matmul_mma_ldmatrix_block_cpasync_a(a, b)
     raise ValueError(f"unknown impl: {impl}")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--impl", choices=["pytorch", "mma", "cpasync", "ldmatrix"], required=True)
+    parser.add_argument(
+        "--impl",
+        choices=["pytorch", "mma", "cpasync", "cpasync_k32", "ldmatrix", "ldmatrix_block", "ldmatrix_block_cpasync_a"],
+        required=True,
+    )
     parser.add_argument("--m", type=int, default=256)
     parser.add_argument("--n", type=int, default=256)
     parser.add_argument("--k", type=int, default=256)

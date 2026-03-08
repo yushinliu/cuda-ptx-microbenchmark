@@ -1,0 +1,107 @@
+[
+  {
+    "impl": "pytorch_mm_out_fp32",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.24997000135481356,
+    "median_ms": 0.24678399413824081,
+    "min_ms": 0.24089600145816803,
+    "max_ms": 0.3481599986553192,
+    "tflops": 69.61500580291428
+  },
+  {
+    "impl": "ptx_mma",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 1.0197156012058257,
+    "median_ms": 0.9721440076828003,
+    "min_ms": 0.9472000002861023,
+    "max_ms": 1.6240639686584473,
+    "tflops": 17.672144299844927
+  },
+  {
+    "impl": "ptx_mma_cpasync",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.4107763983309269,
+    "median_ms": 0.4065279960632324,
+    "min_ms": 0.4044800102710724,
+    "max_ms": 0.5181440114974976,
+    "tflops": 42.25999033367384
+  },
+  {
+    "impl": "ptx_mma_cpasync_k32",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.4560220006853342,
+    "median_ms": 0.4423999935388565,
+    "min_ms": 0.4413439929485321,
+    "max_ms": 0.8785920143127441,
+    "tflops": 38.83333959065954
+  },
+  {
+    "impl": "ptx_mma_ldmatrix",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 6.658675575256348,
+    "median_ms": 6.629279851913452,
+    "min_ms": 5.6893439292907715,
+    "max_ms": 8.058879852294922,
+    "tflops": 2.591513643678998
+  },
+  {
+    "impl": "ptx_mma_ldmatrix_block",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.9293487906455994,
+    "median_ms": 0.8857440054416656,
+    "min_ms": 0.8795520067214966,
+    "max_ms": 1.6414719820022583,
+    "tflops": 19.39597567519914
+  },
+  {
+    "impl": "ptx_mma_ldmatrix_block_cpasync_a",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.7082931995391846,
+    "median_ms": 0.6778879761695862,
+    "min_ms": 0.6716160178184509,
+    "max_ms": 1.4264320135116577,
+    "tflops": 25.343227477016256
+  }
+]

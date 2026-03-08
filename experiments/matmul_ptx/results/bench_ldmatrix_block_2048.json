@@ -1,0 +1,92 @@
+[
+  {
+    "impl": "pytorch_mm_out_fp32",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.2779888018965721,
+    "median_ms": 0.2682559937238693,
+    "min_ms": 0.26636800169944763,
+    "max_ms": 0.3399679958820343,
+    "tflops": 64.04281576531775
+  },
+  {
+    "impl": "ptx_mma",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 1.3107903957366944,
+    "median_ms": 1.0811519622802734,
+    "min_ms": 1.041152000427246,
+    "max_ms": 2.6112000942230225,
+    "tflops": 15.89033714350912
+  },
+  {
+    "impl": "ptx_mma_cpasync",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.5261024013161659,
+    "median_ms": 0.4464160054922104,
+    "min_ms": 0.44441598653793335,
+    "max_ms": 0.886784017086029,
+    "tflops": 38.48399020787299
+  },
+  {
+    "impl": "ptx_mma_cpasync_k32",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.525102399289608,
+    "median_ms": 0.48471999168395996,
+    "min_ms": 0.4833280146121979,
+    "max_ms": 0.8919039964675903,
+    "tflops": 35.44287316129797
+  },
+  {
+    "impl": "ptx_mma_ldmatrix",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 8.245318460464478,
+    "median_ms": 8.201040267944336,
+    "min_ms": 6.5372161865234375,
+    "max_ms": 9.616288185119629,
+    "tflops": 2.0948402425423387
+  },
+  {
+    "impl": "ptx_mma_ldmatrix_block",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 1.0678623974323274,
+    "median_ms": 0.8856000006198883,
+    "min_ms": 0.8734719753265381,
+    "max_ms": 1.6373759508132935,
+    "tflops": 19.399129597984086
+  }
+]

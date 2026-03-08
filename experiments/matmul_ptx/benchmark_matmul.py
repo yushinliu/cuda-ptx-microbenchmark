@@ -7,7 +7,14 @@ from dataclasses import asdict, dataclass
 
 import torch
 
-from matmul_ext import matmul_mma, matmul_mma_cpasync, matmul_mma_ldmatrix
+from matmul_ext import (
+    matmul_mma,
+    matmul_mma_cpasync,
+    matmul_mma_cpasync_k32,
+    matmul_mma_ldmatrix,
+    matmul_mma_ldmatrix_block,
+    matmul_mma_ldmatrix_block_cpasync_a,
+)
 
 
 @dataclass
@@ -54,13 +61,29 @@ def validate(a: torch.Tensor, b: torch.Tensor):
     ref = torch_mm_fp32(a, b)
     y_mma = matmul_mma(a, b)
     y_cpasync = matmul_mma_cpasync(a, b)
+    y_cpasync_k32 = matmul_mma_cpasync_k32(a, b)
     y_ldmatrix = matmul_mma_ldmatrix(a, b)
+    y_ldmatrix_block = matmul_mma_ldmatrix_block(a, b)
+    y_ldmatrix_block_cpasync_a = matmul_mma_ldmatrix_block_cpasync_a(a, b)
     err_mma = (y_mma - ref).abs().max().item()
     err_cpasync = (y_cpasync - ref).abs().max().item()
+    err_cpasync_k32 = (y_cpasync_k32 - ref).abs().max().item()
     err_ldmatrix = (y_ldmatrix - ref).abs().max().item()
-    if err_mma > 1e-2 or err_cpasync > 1e-2 or err_ldmatrix > 1e-2:
+    err_ldmatrix_block = (y_ldmatrix_block - ref).abs().max().item()
+    err_ldmatrix_block_cpasync_a = (y_ldmatrix_block_cpasync_a - ref).abs().max().item()
+    if (
+        err_mma > 1e-2
+        or err_cpasync > 1e-2
+        or err_cpasync_k32 > 1e-2
+        or err_ldmatrix > 1e-2
+        or err_ldmatrix_block > 1e-2
+        or err_ldmatrix_block_cpasync_a > 1e-2
+    ):
         raise RuntimeError(
-            f"correctness failed: mma={err_mma}, cpasync={err_cpasync}, ldmatrix={err_ldmatrix}"
+            f"correctness failed: mma={err_mma}, "
+            f"cpasync={err_cpasync}, cpasync_k32={err_cpasync_k32}, "
+            f"ldmatrix={err_ldmatrix}, ldmatrix_block={err_ldmatrix_block}, "
+            f"ldmatrix_block_cpasync_a={err_ldmatrix_block_cpasync_a}"
         )
 
 
@@ -85,7 +108,10 @@ def main():
         "pytorch_mm_out_fp32": torch_mm_fp32,
         "ptx_mma": matmul_mma,
         "ptx_mma_cpasync": matmul_mma_cpasync,
+        "ptx_mma_cpasync_k32": matmul_mma_cpasync_k32,
         "ptx_mma_ldmatrix": matmul_mma_ldmatrix,
+        "ptx_mma_ldmatrix_block": matmul_mma_ldmatrix_block,
+        "ptx_mma_ldmatrix_block_cpasync_a": matmul_mma_ldmatrix_block_cpasync_a,
     }
 
     flops = 2.0 * args.m * args.n * args.k
