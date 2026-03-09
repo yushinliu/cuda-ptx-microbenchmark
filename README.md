@@ -16,6 +16,10 @@ A comprehensive microbenchmark suite for NVIDIA GPUs using CUDA and PTX assembly
 - **Ada Lovelace Specific**: CP.ASYNC, LDMATRIX instruction benchmarks
 - **Google Test Integration**: Full TDD workflow with 100+ tests, 80%+ coverage
 
+## Profiling Notes
+
+- Nsight Compute (`ncu`) 在当前机器上的固定排障与可用命令，见 `docs/NCU_TROUBLESHOOTING.md`
+
 ## Requirements
 
 - CUDA Toolkit 12.4+

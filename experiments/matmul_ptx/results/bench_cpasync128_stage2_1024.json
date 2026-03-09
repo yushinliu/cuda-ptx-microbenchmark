@@ -1,0 +1,17 @@
+[
+  {
+    "impl": "pytorch_mm_out_fp32",
+    "median_ms": 0.053247999399900436,
+    "tflops": 40.32984660835944
+  },
+  {
+    "impl": "ptx_mma_cpasync",
+    "median_ms": 0.07372800260782242,
+    "tflops": 29.127110080860316
+  },
+  {
+    "impl": "ptx_mma_cpasync_128",
+    "median_ms": 0.09318400174379349,
+    "tflops": 23.045625942363362
+  }
+]

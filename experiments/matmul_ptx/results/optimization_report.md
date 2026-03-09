@@ -13,19 +13,26 @@
 ## Test And Benchmark Method
 
 - Correctness:
-  - primary validation in this WSL environment is now direct GPU execution through `/home/yuliu/miniconda3/bin/python -c ...`
-  - reason: `pytest` and `python <file>.py` intermittently hit `cudaGetDeviceCount` error `304` in this environment even when plain `python -c` GPU runs are healthy
-  - current optimization iterations were therefore validated by direct GPU spot checks on both non-full-tile and full-tile shapes
-  - representative direct checks used:
-    - `(64, 64, 64)` to cover non-full-tile fallback
-    - `(256, 256, 256)` to cover the full-tile hybrid path
+  - primary regression check is now `/home/yuliu/miniconda3/bin/python -m pytest -q experiments/matmul_ptx/test_matmul_ptx.py`
+  - current best handwritten hybrid path passes the full test file: `6 passed`
+  - during kernel bring-up, direct GPU spot checks were still used on representative shapes:
+    - `(64, 64, 64)` for non-full-tile fallback
+    - `(256, 256, 256)` for the full-tile hybrid fast path
 - Benchmark:
   - event-timed benchmark logic is in `benchmark_matmul.py`
-  - in this environment it was driven through `/home/yuliu/miniconda3/bin/python -c ...` to avoid the same file-execution CUDA initialization issue
+  - fresh sweep data in this report comes from:
+    - `bench_stage8_sweep_256.json`
+    - `bench_stage8_sweep_512.json`
+    - `bench_stage8_sweep_1024.json`
+    - `bench_stage8_sweep_2048.json`
+    - `bench_stage8_sweep_4096.json`
+    - `bench_stage8_sweep_8192.json`
+  - these sweep runs were executed outside the sandbox because WSL CUDA initialization inside the sandbox can still fail with `cudaGetDeviceCount` error `304`
   - current script uses CUDA events for timing, not host wall clock
   - `TFLOP/s` is computed from `median_ms`
 - Profile:
   - `/home/yuliu/miniconda3/pkgs/nsight-compute-2025.2.1.3-0/nsight-compute-2025.2.1/ncu --target-processes all --kernel-name-base demangled -o <report> /home/yuliu/miniconda3/bin/python profile_target.py --impl <impl> --m <M> --n <N> --k <K> --warmup 3 --iters 10`
+  - WSL/driver-specific `ncu` setup and failure modes are documented in `docs/NCU_TROUBLESHOOTING.md`
 
 ## Kernel Evolution
 
@@ -58,7 +65,10 @@
 
 - Added a dedicated `cp.async` fast path for shapes that exactly match the threadblock tiling
 - This removes bounds checks and zero-fill handling from the steady-state path
-- Current dispatch uses the fast path when `m % 64 == 0` and `n % 128 == 0`
+- Current dispatch now has two full-tile fast paths:
+  - `64x128x16` for the original WMMA `cp.async` kernel
+  - `128x128x16` for large full-tile shapes where `m >= 2048`, `n >= 2048`, `k % 16 == 0`, `m % 128 == 0`, and `n % 128 == 0`
+- Non-full-tile shapes still fall back to the generic `cp.async` kernel
 - This matched the main benchmark shapes and produced the best medium and large shape results so far
 
 ### 6. Experimental `ldmatrix + mma.sync` Warp Kernel
@@ -134,26 +144,48 @@
   - `(64, 64, 64)`: `0.0`
   - `(256, 256, 256)`: `0.0`
 
+### 12. Experimental `128x128` CTA `cp.async` Kernel
+
+- Based on the NCU comparison, a larger CTA tile was the next most plausible direction
+- Added a dedicated experiment: `matmul_mma_cpasync_128`
+- Shape:
+  - CTA tile: `128x128x16`
+  - warp arrangement: `4 x 4`
+  - threads per block: `512`
+- This keeps the WMMA + `cp.async` structure, but increases on-chip work per CTA to test whether the PyTorch-style "heavier kernel" direction is beneficial
+- GPU spot checks passed:
+  - `(128, 128, 128)`: `0.0`
+  - `(256, 256, 256)`: `0.0`
+  - `(2048, 2048, 2048)`: `0.0`
+
 ## Current Best Benchmark
 
-Source: latest direct event-timed GPU runs plus `bench_fastpath_*.json`
+Source: latest CUDA-event sweep data from `bench_stage8_sweep_*.json`
 
-| Shape | PyTorch med ms | Best PTX med ms | Best PTX impl | Best PTX TFLOP/s | Result |
-| --- | ---: | ---: | --- | ---: | --- |
-| 512x512x512 | 0.0398 | 0.0787 | `ptx_mma_cpasync` | 3.41 | PTX slower |
-| 1024x1024x1024 | 0.0471 | 0.0737 | `ptx_mma_cpasync` | 29.13 | PTX slower |
-| 2048x2048x2048 | 0.2773 | 0.4287 | `ptx_mma_ldmatrix_block_cpasync_a` | 40.07 | PTX slower, but best custom path shifted to hybrid |
+| Shape | PyTorch med ms | Best PTX med ms | Best PTX impl | Result |
+| --- | ---: | ---: | --- | --- |
+| 256x256x256 | 0.0215 | 0.0099 | `ptx_mma_ldmatrix_block_cpasync_a` | PTX faster |
+| 512x512x512 | 0.0205 | 0.0184 | `ptx_mma_cpasync` | PTX faster |
+| 1024x1024x1024 | 0.0522 | 0.0481 | `ptx_mma_ldmatrix_block_cpasync_a` | PTX faster |
+| 2048x2048x2048 | 0.2746 | 0.2744 | `ptx_mma_ldmatrix_block_cpasync_a` | Essentially tied |
+| 4096x4096x4096 | 1.9865 | 2.0928 | `ptx_mma_ldmatrix_block_cpasync_a` | PTX slower |
+| 8192x8192x8192 | 15.7906 | 22.5652 | `ptx_mma_ldmatrix_block_cpasync_a` | PTX slower |
 
 Important note:
 
 - Switching from host wall-clock timing to CUDA event timing materially reduced measurement noise
-- On 1024, the best custom kernel remains the WMMA-based `cp.async` fast path at `0.0737 ms`
-- On 2048, the latest vectorized-`B` hybrid run shifted the best custom result to `matmul_mma_ldmatrix_block_cpasync_a` at `0.4287 ms`
-- The gap to PyTorch remains large, but the best custom path is no longer uniformly the WMMA fast path at every shape
+- The handwritten PTX hybrid is now the fastest custom path from `1024^3` upward and is effectively tied with PyTorch at `2048^3`
+- The old WMMA `cp.async` family still wins the small `512^3` point, but no longer wins the large-shape sweep
+- The remaining gap is now concentrated at `4096^3` and `8192^3`, which matches the later NCU diagnosis that the handwritten hybrid is still more copy/shared-path limited than PyTorch
 
 ## Power-Of-Two Sweep
 
 Source: `pow2_sweep.json`
+
+Note:
+
+- this chart and table are regenerated from the latest stage-8 fresh sweep data
+- the SVG now uses a linear millisecond y-axis, not powers-of-two tick spacing
 
 Square GEMM sizes swept on GPU:
 
@@ -164,21 +196,21 @@ Square GEMM sizes swept on GPU:
 - `4096^3`
 - `8192^3`
 
-| Shape | PyTorch med ms | PTX cp.async med ms | PTX hybrid med ms | Best custom impl |
+| Shape | PyTorch med ms | PTX WMMA best med ms | PTX hybrid med ms | Best custom impl |
 | --- | ---: | ---: | ---: | --- |
-| 256x256x256 | 0.0408 | 0.0120 | 0.0154 | `ptx_mma_cpasync` |
-| 512x512x512 | 0.0224 | 0.0203 | 0.0284 | `ptx_mma_cpasync` |
-| 1024x1024x1024 | 0.0471 | 0.0737 | 0.0838 | `ptx_mma_cpasync` |
-| 2048x2048x2048 | 0.2691 | 0.4475 | 0.4710 | `ptx_mma_cpasync` |
-| 4096x4096x4096 | 2.0028 | 3.2220 | 3.2444 | `ptx_mma_cpasync` |
-| 8192x8192x8192 | 15.3358 | 29.2485 | 32.8504 | `ptx_mma_cpasync` |
+| 256x256x256 | 0.0215 | 0.0154 | 0.0099 | `ptx_mma_ldmatrix_block_cpasync_a` |
+| 512x512x512 | 0.0205 | 0.0184 | 0.0388 | `ptx_mma_cpasync` |
+| 1024x1024x1024 | 0.0522 | 0.0664 | 0.0481 | `ptx_mma_ldmatrix_block_cpasync_a` |
+| 2048x2048x2048 | 0.2746 | 0.4079 | 0.2744 | `ptx_mma_ldmatrix_block_cpasync_a` |
+| 4096x4096x4096 | 1.9865 | 2.7238 | 2.0928 | `ptx_mma_ldmatrix_block_cpasync_a` |
+| 8192x8192x8192 | 15.7906 | 23.6876 | 22.5652 | `ptx_mma_ldmatrix_block_cpasync_a` |
 
 Trend summary:
 
-- the custom kernels remain competitive only at the smallest sizes, where launch overhead dominates more heavily
-- from `1024^3` upward, PyTorch opens a clear and persistent lead
-- the hybrid `ldmatrix` path no longer wins the large-shape sweep once the test is broadened to `2048`, `4096`, and `8192`
-- this suggests the earlier `2048` single-run hybrid win was real for that run, but not robust across broader repeated sweep conditions
+- the handwritten hybrid now overtakes the WMMA `cp.async` family at every point except `512^3`
+- at `2048^3`, the handwritten hybrid is effectively tied with PyTorch (`0.2744 ms` vs `0.2746 ms`)
+- at `4096^3` and `8192^3`, the handwritten hybrid remains the best custom path but still trails PyTorch
+- the remaining optimization target is therefore not the older WMMA kernel family, but the hybrid copy/shared-memory path highlighted by the later NCU sections
 
 Median runtime line chart:
 
@@ -281,6 +313,64 @@ Interpretation:
 - the warp-level fragment load/compute structure remained the same, so the larger staged tile did not remove the dominant inefficiency
 - current best remains the `64x128x16` fast path with the `3-stage` pipeline
 
+## Experimental `128x128` CTA Benchmark
+
+Source: `bench_cpasync128_stage2_512.json`, `bench_cpasync128_stage2_1024.json`, `bench_cpasync128_stage2_2048.json`, `bench_cpasync128_stage2_4096.json`, `bench_cpasync128_stage2_8192.json`
+
+The final tested version of this kernel used `2-stage`, not `3-stage`.
+
+| Shape | PTX cp.async med ms | PTX cp.async 128 med ms | Result |
+| --- | ---: | ---: | --- |
+| 512x512x512 | 0.0205 | 0.0287 | `128x128` worse |
+| 1024x1024x1024 | 0.0737 | 0.0932 | `128x128` worse |
+| 2048x2048x2048 | 0.4487 | 0.4434 | `128x128` slightly better |
+| 4096x4096x4096 | 3.0879 | 2.9837 | `128x128` better |
+| 8192x8192x8192 | 28.8455 | 24.5923 | `128x128` materially better |
+
+Interpretation:
+
+- the larger CTA direction is real: once the problem is large enough, `128x128` improves the WMMA path
+- this matches the NCU diagnosis that the main issue is useful tensor-core work per active warp, not occupancy
+- however, the benefit is not uniform across all sizes
+- the larger kernel is clearly worse at `512` and `1024`
+- for `2048` and above it becomes competitive or better
+
+Follow-up note:
+
+- after cleaning up hung `ncu` processes and rerunning isolated GPU benchmarks, the large-CTA result remained directionally consistent:
+  - worse at `1024`
+  - better at `2048`, `4096`, and `8192`
+- this was strong enough to promote the `128x128` path behind a size gate in the default `matmul_mma_cpasync` launcher rather than leaving it as an experiment-only API
+
+## Shape-Aware Default Dispatch Benchmark
+
+Source: `bench_dispatch_resanity.json`, `bench_dispatch_order_4096.json`
+
+The default `matmul_mma_cpasync` launcher now behaves as:
+
+- `1024` and smaller full-tile shapes: original `64x128x16` path
+- `2048` and larger full-tile shapes divisible by `128x128x16`: `128x128x16` path
+
+Representative results:
+
+| Shape | Default `ptx_mma_cpasync` med ms | Explicit `ptx_mma_cpasync_128` med ms | Interpretation |
+| --- | ---: | ---: | --- |
+| 1024x1024x1024 | 0.0748 | 0.0940 | default correctly stays on `64x128` |
+| 2048x2048x2048 | 0.4526 | 0.4437 | default is in the same band; explicit large CTA still benchmarks slightly better in this order |
+| 4096x4096x4096 | 3.1145 | 2.9761 | default is in the same band; order-sensitive run still favors explicit large CTA in this pass |
+| 8192x8192x8192 | 25.5883 | 25.7797 | default and explicit large CTA are effectively the same |
+
+Order-controlled `4096` rerun:
+
+- when `default` runs first: `default 3.2858 ms`, `explicit128 3.2420 ms`
+- when `explicit128` runs first: `explicit128 3.0008 ms`, `default 2.9885 ms`
+
+Interpretation:
+
+- the default launcher is reaching the same large-CTA performance regime
+- the remaining gap between default and explicit measurements is benchmark-order noise, not a fundamentally different kernel path
+- the pragmatic outcome is to keep the size-gated default dispatch, because it preserves `1024` behavior while improving the large-shape cases
+
 ## Nsight Compute Findings
 
 ### PyTorch 2048
@@ -369,6 +459,54 @@ Interpretation:
 - but it still loses in end-to-end runtime because the surrounding load/store path is inefficient
 - in practice, the kernel is spending too much work on feeding the tensor core path, even though the tensor core path itself is active
 
+## NCU Comparison: PyTorch vs Current Best PTX
+
+For the broad power-of-two sweep, the most robust PTX direction remains the WMMA-based `cp.async` family, not the hybrid `ldmatrix` kernel. The NCU comparison below still uses the profiled `64x128` fast path because fresh live profiling of the new `128x128` default path remains unreliable in this WSL environment. Even so, the later benchmark data shows that the larger CTA direction predicted by NCU was correct. The comparison below therefore uses:
+
+- PyTorch kernel: `ampere_s1688gemm_fp16_128x128_ldg8_stages_32x1_nn`
+- PTX kernel: `<unnamed>::matmul_mma_cpasync_fast_kernel(const __half *, const __half *, float *, long, long, long)`
+- Shape: `2048 x 2048 x 2048`
+- NCU source: imported `ncu_pytorch_2048_stage3.ncu-rep` and `ncu_cpasync_2048_fastpath.ncu-rep`
+
+Representative kernel metrics:
+
+| Metric | PyTorch | Best PTX (`cp.async`) | Takeaway |
+| --- | ---: | ---: | --- |
+| `gpu__time_duration.sum` | `~341 us` | `~571 us` | PTX is about `1.67x` slower |
+| `sm__throughput.avg.pct_of_peak_sustained_elapsed` | `~44.3%` | `~22.6%` to `~26.5%` | main gap is compute-side issue efficiency |
+| `gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed` | `~19.7%` to `~21.9%` | `~12.0%` to `~18.0%` | memory is active, but not saturated on either side |
+| `sm__warps_active.avg.pct_of_peak_sustained_active` | `~15.3%` | `~59.9%` | PTX already has plenty of active warps; occupancy is not the blocker |
+| `launch__registers_per_thread` | `234` | `56` | PyTorch spends far more registers per thread for larger on-chip state |
+| `launch__shared_mem_per_block_static` | `32.77 KB` | `18.43 KB` | PyTorch also uses more shared memory per CTA |
+| `launch__waves_per_multiprocessor` | `2.29` | `2.29` | both have similar wave residency |
+
+Launch geometry difference from NCU:
+
+- PyTorch block: `(128, 1, 1)`, grid: `(16, 16, 1)`
+- PTX block: `(256, 1, 1)`, grid: `(16, 32, 1)`
+
+Interpretation:
+
+- PyTorch is doing much more useful work per active warp
+- the PTX kernel already has high warp residency, so increasing occupancy further is unlikely to help
+- PyTorch's larger register and shared-memory footprint strongly suggests a larger accumulator footprint and/or more aggressive on-chip staging
+- PyTorch also uses a larger CTA tile in `M` (`128x128` family vs our `64x128`), which likely improves operand reuse and amortizes staging overhead
+- the data is consistent with a tensor-core issue-efficiency problem, not a raw DRAM-bandwidth problem
+
+Concrete optimization directions implied by NCU:
+
+- move the best PTX path toward a larger CTA tile, especially along `M`, such as `128x128x16` or `128x128x32`
+- increase per-warp accumulator work rather than per-SM occupancy
+- replace more of the WMMA wrapper path with direct `ldmatrix + mma.sync` in the final winning kernel, not only in experimental side branches
+- keep optimizing `B` staging, because the hybrid results already proved that better feed efficiency materially moves the needle
+- accept higher register pressure if it buys more accumulator reuse and fewer fragment reloads; PyTorch is clearly winning with a much "heavier" kernel
+
+Follow-up result:
+
+- the `128x128x16` experiment validated this direction partially
+- it does improve the WMMA path for large enough problems
+- but the improvement is not yet stable enough to replace the default `64x128` path across the board
+
 ## Roofline View
 
 Using hardware attributes visible in profiling:
@@ -426,6 +564,7 @@ So the remaining headroom is primarily above the roofline's bandwidth region:
 - The failed `B`-side `cp.async` attempt also exposed a concrete low-level risk: CUTLASS crosswise layouts impose alignment constraints that are not automatically compatible with naive 16-byte async chunking.
 - The later vectorized `B` feed change materially reduced that staging cost without violating layout alignment constraints.
 - After this fix, the hybrid kernel became competitive with the best WMMA `cp.async` path at `2048`, which confirms that `B` staging was indeed one of the dominant remaining bottlenecks.
+- The later `128x128` WMMA experiment adds another useful signal: increasing CTA work can help, but only once the problem is large enough to amortize the heavier launch and staging structure.
 
 ## Remaining Headroom
 
@@ -434,10 +573,42 @@ There is still clear optimization headroom, but it likely requires a more aggres
 - replace more `wmma` wrapper usage with inline PTX `ldmatrix` + `mma.sync`
 - reduce fragment load/store overhead and shared-memory traffic around `wmma::load_matrix_sync`
 - reduce `B` operand staging cost for the `ldmatrix` path, likely with a layout-aware async or vectorized copy strategy instead of scalar fills
+- continue the larger-CTA direction, but with more careful dispatch and perhaps a `128x128x32` or mixed-stage variant, since `128x128x16` is only profitable at large sizes
 - if continuing beyond the current vectorized feed, the next useful step is likely a more layout-aware `B` staging path that preserves 16-byte movement while avoiding the direct-layout misalignment trap
 - consider warp-specialized copy/compute roles so `cp.async` overlap is more explicit
 - add size-based kernel dispatch if small and medium shapes prefer different tile shapes
 - tune shared-memory layout to reduce L1/shared pressure further
+
+## Latest NCU Retry Status
+
+Current state of live Nsight Compute profiling in this WSL environment:
+
+- historical `.ncu-rep` reports remain valid and were used throughout the earlier analysis in this report
+- a fresh round of live `ncu` retries on March 9, 2026 did not successfully produce new `.ncu-rep` files
+- this failure reproduces even when using the same command shape that had worked earlier for:
+  - `profile_target.py --impl cpasync --m 2048 --n 2048 --k 2048 --warmup 3 --iters 10`
+
+Retried live `ncu` variants:
+
+- direct `ncu` launch without `cudaProfilerStart/Stop`
+- direct `ncu` launch without NVTX
+- PyTorch `matmul` on `512x512x512` and custom `cpasync` on `2048x2048x2048`
+- with and without `--target-processes all`
+- kernel-filtered profiling using `-k regex:^ampere_.*gemm.*$`
+- CPU initialization plus H2D copy moved outside the intended profile window
+- TTY-backed launch
+
+Observed behavior:
+
+- the same workloads finish quickly without `ncu`
+- under `ncu`, the target Python process remains live far longer than expected
+- no new report file is written before manual termination or timeout
+- therefore the current blocker is not extra initialization kernels being captured, but live `ncu` execution itself in the present environment state
+
+Practical conclusion:
+
+- for now, the most reliable profiling evidence is still the existing imported `.ncu-rep` data already analyzed above
+- if fresh live profiling is required, the best next step is likely to retry in a fresh WSL/GPU session or move to native Linux/Windows rather than continue changing `ncu` flags here
 
 ## Status Against Goal
 
@@ -447,6 +618,7 @@ There is still clear optimization headroom, but it likely requires a more aggres
   - PTX kernel with `mma` and `cp.async`
   - correctness preserved after optimization
   - measurable speedup versus earlier PTX baselines
+  - size-gated default dispatch that preserves small-shape behavior and improves large-shape throughput
 - Goal not yet met:
   - current PTX kernel is still slower than PyTorch on the main medium and large shapes, though the gap is narrower after the fast-path optimization
   - the experimental `ldmatrix` rewrite is correct but currently much slower than both PyTorch and the tuned `cp.async` kernel
@@ -487,8 +659,206 @@ There is still clear optimization headroom, but it likely requires a more aggres
   - `results/bench_bvec_final_2048.json`
   - `results/bench_bvec_stage3_1024.json`
   - `results/bench_bvec_stage3_2048.json`
+  - `results/bench_cpasync128_2048.json`
+  - `results/bench_cpasync128_4096.json`
+  - `results/bench_cpasync128_stage2_512.json`
+  - `results/bench_cpasync128_stage2_1024.json`
+  - `results/bench_cpasync128_stage2_2048.json`
+  - `results/bench_cpasync128_stage2_4096.json`
+  - `results/bench_cpasync128_stage2_8192.json`
+  - `results/bench_cpasync128_resanity.json`
+  - `results/bench_cpasync128_resanity_8192.json`
+  - `results/bench_dispatch_resanity.json`
+  - `results/bench_dispatch_order_4096.json`
   - `results/pow2_sweep.json`
   - `results/pow2_sweep_median_ms.svg`
 - Scripts:
+  - `profile_target.py`
   - `sweep_matmul_pow2.py`
   - `plot_pow2_sweep.py`
+
+## Stage 6: `ncu` Driver Fix + `cp.async.cg` Retune
+
+### `ncu` Driver/Runtime Resolution
+
+- `ncu 2025.3.1` failed on this machine with:
+  - `Cuda driver is not compatible with Nsight Compute`
+- Working combination for fresh reruns:
+  - `nsight-compute 2025.2.1`
+  - run outside the sandbox
+  - `NV_COMPUTE_PROFILER_LOCAL_CONNECTION_OVERRIDE=uds`
+  - `--profile-from-start off` together with the `cudaProfilerStart/Stop` window in `profile_target.py`
+
+Fresh reports collected:
+
+- `results/ncu_stage5_pytorch_2048.ncu-rep`
+- `results/ncu_stage5_cpasync128_2048.ncu-rep`
+- `results/ncu_stage6_cpasync128_2048.ncu-rep`
+
+### Fresh 2048 NCU Comparison
+
+PyTorch (`ampere_s1688gemm_fp16_128x128_ldg8_stages_32x1_nn`):
+
+- duration: `341.15 us`
+- compute throughput: `44.34%`
+- memory throughput: `31.58%`
+- achieved occupancy: `15.32%`
+- eligible warps/scheduler: `0.14`
+- issued warps/scheduler: `0.09`
+
+Best PTX before retune (`matmul_mma_cpasync_128_fast_kernel`):
+
+- duration: `567.30 us`
+- compute throughput: `26.65%`
+- memory throughput: `80.75%`
+- L1/TEX throughput: `88.81%`
+- achieved occupancy: `61.45%`
+- eligible warps/scheduler: `0.29`
+- issued warps/scheduler: `0.17`
+
+Interpretation:
+
+- the PTX kernel is not DRAM-bandwidth bound (`DRAM Throughput` only about `9-10%`)
+- instead it is over-driving the copy/load path (`L1/TEX` very high) while still showing poor scheduler eligibility
+- that points more toward copy-path / cache-path pressure than raw tensor-core under-utilization alone
+
+### Retune: `cp.async.ca -> cp.async.cg`
+
+Change applied in `matmul_kernel.cu`:
+
+- switched `cp.async.ca.shared.global` to `cp.async.cg.shared.global`
+
+Reason:
+
+- for streaming GEMM tiles, bypassing L1 is a better fit than aggressively caching in L1/TEX
+- this directly targets the high `L1/TEX` pressure observed in fresh NCU data
+
+### Validation After Retune
+
+Correctness:
+
+- `pytest -q experiments/matmul_ptx/test_matmul_ptx.py`
+- result: `6 passed`
+
+Benchmark deltas vs the fresh pre-retune baseline:
+
+`2048^3`
+
+- `ptx_mma_cpasync`: `0.4413 -> 0.4126 ms` (`+6.51%`)
+- `ptx_mma_cpasync_128`: `0.4004 -> 0.3917 ms` (`+2.17%`)
+- `ptx_mma_cpasync_k32`: `0.4424 -> 0.4147 ms` (`+6.25%`)
+- `ptx_mma_cpasync_128_k32`: `0.4614 -> 0.4361 ms` (`+5.49%`)
+
+`4096^3`
+
+- `ptx_mma_cpasync`: `2.9602 -> 2.6995 ms` (`+8.81%`)
+- `ptx_mma_cpasync_128`: `2.9691 -> 2.7203 ms` (`+8.38%`)
+- `ptx_mma_cpasync_k32`: `3.2566 -> 2.9917 ms` (`+8.13%`)
+- `ptx_mma_cpasync_128_k32`: `3.4249 -> 3.2429 ms` (`+5.31%`)
+
+Optimized NCU (`results/ncu_stage6_cpasync128_2048.ncu-rep`) vs pre-retune:
+
+- duration: `567.30 -> 516.83 us`
+- compute throughput: `26.65% -> 29.10%`
+- L1/TEX throughput: `88.81% -> 87.50%`
+- L2 throughput: `24.08% -> 26.79%`
+- eligible warps/scheduler: `0.29 -> 0.32`
+- issued warps/scheduler: `0.17 -> 0.19`
+- no eligible: `82.94% -> 81.25%`
+
+Current takeaways:
+
+- the `cg` retune is a real improvement and matches the NCU diagnosis
+- `2048^3` still prefers the `128x128` CTA path
+- `4096^3` now slightly prefers the original `64x128` `cp.async` path again
+- PyTorch remains ahead, but the best PTX path is measurably better than the previous stage
+
+## Stage 7: Handwritten PTX Hybrid Rewrite
+
+Goal:
+
+- replace the slow CUTLASS-iterator hybrid path with a fully explicit PTX path
+- keep `cp.async` global->shared staging for both `A` and `B`
+- reduce shared-memory pressure on `B` by adding a skewed shared stride
+
+Code changes:
+
+- added handwritten PTX helpers in `experiments/matmul_ptx/matmul_kernel.cu`
+  - `wmma.load.a.sync.aligned.row.m16n16k16.shared.f16`
+  - `wmma.load.b.sync.aligned.row.m16n16k16.shared.f16`
+  - `wmma.mma.sync.aligned.row.row.m16n16k16.f32.f32`
+  - `wmma.store.d.sync.aligned.row.m16n16k16.global.f32`
+- rewrote `matmul_mma_ldmatrix_block_cpasync_a_kernel` to:
+  - stage `A` with direct `cp.async`
+  - stage `B` with direct `cp.async`
+  - store `B` in shared with padded stride `kHybridBStride = kBlockN + 8`
+  - compute each warp tile as `4 x 16x16` PTX WMMA ops
+
+Reasoning:
+
+- the previous hybrid kernel paid a large cost to scatter row-major `B` into CUTLASS crosswise shared layout
+- fresh NCU already showed the dominant issue was shared-memory excessive wavefronts, not DRAM bandwidth
+- moving to direct PTX WMMA on a row-major shared layout removes that crosswise scatter path entirely
+- the extra `+8` half skew on `B` is a simple shared-memory bank-conflict mitigation compatible with direct `wmma.load`
+
+Validation:
+
+- `python -m pytest -q experiments/matmul_ptx/test_matmul_ptx.py -k correctness`
+  - result: `4 passed`
+- `python -m pytest -q experiments/matmul_ptx/test_matmul_ptx.py`
+  - result: `6 passed`
+
+Benchmark (`2048^3`, `warmup=10`, `iters=30`):
+
+- `pytorch_mm_out_fp32`: `0.2690 ms`
+- `ptx_mma_ldmatrix_block_cpasync_a`: `0.2749 ms`
+- gap to PyTorch: about `+2.2%`
+
+Takeaway:
+
+- the handwritten PTX hybrid path is now effectively at PyTorch level for `2048^3`
+- the key win came from removing the CUTLASS crosswise `B` transform path, not from pushing more DRAM bandwidth
+
+Additional large-shape check (`4096^3`, `warmup=5`, `iters=20`):
+
+- `pytorch_mm_out_fp32`: `1.9798 ms`
+- `ptx_mma_ldmatrix_block_cpasync_a`: `2.0110 ms`
+- gap to PyTorch: about `+1.6%`
+
+## Stage 8: Fresh NCU on Handwritten Hybrid and Pad Sweep
+
+Fresh NCU baseline (`results/ncu_stage8_hybrid_2048.ncu-rep`) vs PyTorch (`results/ncu_stage8_pytorch_2048.ncu-rep`):
+
+- PyTorch duration: `341.22 us`
+- handwritten hybrid duration: `381.79 us`
+- PyTorch compute throughput: `44.31%`
+- handwritten hybrid compute throughput: `39.65%`
+- PyTorch memory throughput: `31.46%`
+- handwritten hybrid memory throughput: `64.32%`
+
+Interpretation:
+
+- after the handwritten PTX rewrite, the hybrid kernel is no longer primarily compute-limited
+- compared with PyTorch, it now over-consumes the memory path, especially on the shared-memory / copy side
+- fresh source counters point to two dominant `LDGSTS.E.BYPASS.128` instructions, i.e. the `cp.async` copy path itself
+
+Fresh hybrid NCU bottlenecks:
+
+- `UncoalescedGlobalAccess`: `4,194,304` excessive sectors (`24%`)
+- `UncoalescedSharedAccess`: `10,747,904` excessive wavefronts (`48%`)
+- top source hot spots are `cp.async`-lowered `LDGSTS.E.BYPASS.128` instructions, not the HMMA body
+
+Parameter sweep:
+
+- tried increasing hybrid `B` padding from `+8` to `+16`
+- benchmark impact at `2048^3`: `0.2754 ms` vs baseline `~0.275-0.276 ms` (roughly neutral)
+- benchmark impact at `4096^3`: regressed to `2.0870 ms` vs prior `2.0110 ms`
+- fresh NCU with `+16` removed most visible global excess on the heaviest `B` copy site, but increased shared replay pressure
+
+Decision:
+
+- keep `kHybridBPad = 8`
+- current bottleneck is the remaining `cp.async` destination/source mapping itself
+- the next meaningful step is not another simple padding tweak; it is a more invasive refactor such as:
+  - warp-specialized `B` copy mapping, or
+  - a true swizzled shared layout plus matching manual `ldmatrix` addressing

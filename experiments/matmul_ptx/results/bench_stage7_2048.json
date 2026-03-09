@@ -1,0 +1,137 @@
+[
+  {
+    "impl": "pytorch_mm_out_fp32",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.2815667998045683,
+    "median_ms": 0.2734079957008362,
+    "min_ms": 0.2662400007247925,
+    "max_ms": 0.3654080033302307,
+    "tflops": 62.836015969329075
+  },
+  {
+    "impl": "ptx_mma",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 1.1499208062887192,
+    "median_ms": 1.0664960145950317,
+    "min_ms": 1.0383360385894775,
+    "max_ms": 2.5415680408477783,
+    "tflops": 16.10870453231231
+  },
+  {
+    "impl": "ptx_mma_cpasync",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.382540799677372,
+    "median_ms": 0.3671039938926697,
+    "min_ms": 0.3624959886074066,
+    "max_ms": 0.5212159752845764,
+    "tflops": 46.798371768798795
+  },
+  {
+    "impl": "ptx_mma_cpasync_128",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.3692223995923996,
+    "median_ms": 0.3665919899940491,
+    "min_ms": 0.3632960021495819,
+    "max_ms": 0.44703999161720276,
+    "tflops": 46.8637331226983
+  },
+  {
+    "impl": "ptx_mma_cpasync_128_k32",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.46634240411221983,
+    "median_ms": 0.4362240135669708,
+    "min_ms": 0.4341759979724884,
+    "max_ms": 1.2707840204238892,
+    "tflops": 39.383134925382734
+  },
+  {
+    "impl": "ptx_mma_cpasync_k32",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.4449088029563427,
+    "median_ms": 0.41574400663375854,
+    "min_ms": 0.41471999883651733,
+    "max_ms": 1.3271039724349976,
+    "tflops": 41.323191458859114
+  },
+  {
+    "impl": "ptx_mma_ldmatrix",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 6.942751628160477,
+    "median_ms": 7.023103952407837,
+    "min_ms": 5.688320159912109,
+    "max_ms": 8.685567855834961,
+    "tflops": 2.4461932075076245
+  },
+  {
+    "impl": "ptx_mma_ldmatrix_block",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.675888005644083,
+    "median_ms": 0.6359040141105652,
+    "min_ms": 0.6318079829216003,
+    "max_ms": 1.7026879787445068,
+    "tflops": 27.01645028617939
+  },
+  {
+    "impl": "ptx_mma_ldmatrix_block_cpasync_a",
+    "shape": [
+      2048,
+      2048,
+      2048
+    ],
+    "input_dtype": "torch.float16",
+    "output_dtype": "torch.float32",
+    "avg_ms": 0.735921198129654,
+    "median_ms": 0.6947680115699768,
+    "min_ms": 0.6912000179290771,
+    "max_ms": 1.4423999786376953,
+    "tflops": 24.72749018075604
+  }
+]

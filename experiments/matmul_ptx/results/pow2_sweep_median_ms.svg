@@ -1,30 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="980" height="620" viewBox="0 0 980 620">
 <rect width="100%" height="100%" fill="#fffdf8"/>
-<text x="96" y="28" font-size="24" font-family="monospace" fill="#111111">Power-of-Two GEMM Sweep</text>
-<text x="96" y="48" font-size="12" font-family="monospace" fill="#4a4a4a">Square fp16 x fp16 -> fp32, median CUDA-event time, y-axis in log scale</text>
+<text x="96" y="28" font-size="24" font-family="monospace" fill="#111111">Current Power-of-Two GEMM Sweep</text>
+<text x="96" y="48" font-size="12" font-family="monospace" fill="#4a4a4a">Square fp16 x fp16 -&gt; fp32, median CUDA-event time, linear y-axis in milliseconds</text>
 <rect x="96" y="56" width="856" height="472" fill="#fffaf0" stroke="#d8cfc0" stroke-width="1"/>
-<line x1="96" y1="504.68" x2="952" y2="504.68" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="508.68" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">0.01 ms</text>
-<line x1="96" y1="469.06" x2="952" y2="469.06" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="473.06" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">0.02 ms</text>
-<line x1="96" y1="421.97" x2="952" y2="421.97" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="425.97" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">0.05 ms</text>
-<line x1="96" y1="386.35" x2="952" y2="386.35" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="390.35" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">0.1 ms</text>
-<line x1="96" y1="350.72" x2="952" y2="350.72" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="354.72" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">0.2 ms</text>
-<line x1="96" y1="303.63" x2="952" y2="303.63" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="307.63" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">0.5 ms</text>
-<line x1="96" y1="268.01" x2="952" y2="268.01" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="272.01" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">1 ms</text>
-<line x1="96" y1="232.39" x2="952" y2="232.39" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="236.39" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">2 ms</text>
-<line x1="96" y1="185.30" x2="952" y2="185.30" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="189.30" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">5 ms</text>
-<line x1="96" y1="149.68" x2="952" y2="149.68" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="153.68" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">10 ms</text>
-<line x1="96" y1="114.05" x2="952" y2="114.05" stroke="#ece5d8" stroke-width="1"/>
-<text x="84" y="118.05" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">20 ms</text>
+<line x1="96" y1="528.00" x2="952" y2="528.00" stroke="#ece5d8" stroke-width="1"/>
+<text x="84" y="532.00" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">0.00 ms</text>
+<line x1="96" y1="449.33" x2="952" y2="449.33" stroke="#ece5d8" stroke-width="1"/>
+<text x="84" y="453.33" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">5.0 ms</text>
+<line x1="96" y1="370.67" x2="952" y2="370.67" stroke="#ece5d8" stroke-width="1"/>
+<text x="84" y="374.67" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">10 ms</text>
+<line x1="96" y1="292.00" x2="952" y2="292.00" stroke="#ece5d8" stroke-width="1"/>
+<text x="84" y="296.00" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">15 ms</text>
+<line x1="96" y1="213.33" x2="952" y2="213.33" stroke="#ece5d8" stroke-width="1"/>
+<text x="84" y="217.33" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">20 ms</text>
+<line x1="96" y1="134.67" x2="952" y2="134.67" stroke="#ece5d8" stroke-width="1"/>
+<text x="84" y="138.67" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">25 ms</text>
+<line x1="96" y1="56.00" x2="952" y2="56.00" stroke="#ece5d8" stroke-width="1"/>
+<text x="84" y="60.00" text-anchor="end" font-size="11" font-family="monospace" fill="#555555">30 ms</text>
 <line x1="96.00" y1="56" x2="96.00" y2="528" stroke="#f2ecdf" stroke-width="1"/>
 <text x="96.00" y="552" text-anchor="middle" font-size="12" font-family="monospace" fill="#333333">256</text>
 <line x1="267.20" y1="56" x2="267.20" y2="528" stroke="#f2ecdf" stroke-width="1"/>
@@ -37,36 +29,54 @@
 <text x="780.80" y="552" text-anchor="middle" font-size="12" font-family="monospace" fill="#333333">4096</text>
 <line x1="952.00" y1="56" x2="952.00" y2="528" stroke="#f2ecdf" stroke-width="1"/>
 <text x="952.00" y="552" text-anchor="middle" font-size="12" font-family="monospace" fill="#333333">8192</text>
-<polyline fill="none" stroke="#111111" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="96.00,432.44 267.20,463.12 438.40,425.05 609.60,335.47 780.80,232.32 952.00,127.70"/>
-<circle cx="96.00" cy="432.44" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="267.20" cy="463.12" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="438.40" cy="425.05" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="609.60" cy="335.47" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="780.80" cy="232.32" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="952.00" cy="127.70" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
-<polyline fill="none" stroke="#0b84f3" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="96.00,495.45 267.20,468.32 438.40,402.01 609.60,309.34 780.80,207.88 952.00,94.52"/>
-<circle cx="96.00" cy="495.45" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="267.20" cy="468.32" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="438.40" cy="402.01" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="609.60" cy="309.34" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="780.80" cy="207.88" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="952.00" cy="94.52" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
-<polyline fill="none" stroke="#f06418" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="96.00,482.62 267.20,451.07 438.40,395.42 609.60,306.70 780.80,207.53 952.00,88.55"/>
-<circle cx="96.00" cy="482.62" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="267.20" cy="451.07" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="438.40" cy="395.42" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="609.60" cy="306.70" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="780.80" cy="207.53" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
-<circle cx="952.00" cy="88.55" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
+<polyline fill="none" stroke="#111111" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="96.00,527.66 267.20,527.68 438.40,527.18 609.60,523.68 780.80,496.75 952.00,279.56"/>
+<circle cx="96.00" cy="527.66" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
+<text x="96.00" y="517.66" text-anchor="middle" font-size="10" font-family="monospace" fill="#111111">0.02</text>
+<circle cx="267.20" cy="527.68" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
+<text x="267.20" y="517.68" text-anchor="middle" font-size="10" font-family="monospace" fill="#111111">0.02</text>
+<circle cx="438.40" cy="527.18" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
+<text x="438.40" y="517.18" text-anchor="middle" font-size="10" font-family="monospace" fill="#111111">0.05</text>
+<circle cx="609.60" cy="523.68" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
+<text x="609.60" y="513.68" text-anchor="middle" font-size="10" font-family="monospace" fill="#111111">0.3</text>
+<circle cx="780.80" cy="496.75" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
+<text x="780.80" y="486.75" text-anchor="middle" font-size="10" font-family="monospace" fill="#111111">2.0</text>
+<circle cx="952.00" cy="279.56" r="4.5" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
+<text x="952.00" y="269.56" text-anchor="middle" font-size="10" font-family="monospace" fill="#111111">16</text>
+<polyline fill="none" stroke="#0b84f3" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="96.00,527.76 267.20,527.71 438.40,526.96 609.60,521.58 780.80,485.15 952.00,155.31"/>
+<circle cx="96.00" cy="527.76" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
+<text x="96.00" y="517.76" text-anchor="middle" font-size="10" font-family="monospace" fill="#0b84f3">0.02</text>
+<circle cx="267.20" cy="527.71" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
+<text x="267.20" y="517.71" text-anchor="middle" font-size="10" font-family="monospace" fill="#0b84f3">0.02</text>
+<circle cx="438.40" cy="526.96" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
+<text x="438.40" y="516.96" text-anchor="middle" font-size="10" font-family="monospace" fill="#0b84f3">0.07</text>
+<circle cx="609.60" cy="521.58" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
+<text x="609.60" y="511.58" text-anchor="middle" font-size="10" font-family="monospace" fill="#0b84f3">0.4</text>
+<circle cx="780.80" cy="485.15" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
+<text x="780.80" y="475.15" text-anchor="middle" font-size="10" font-family="monospace" fill="#0b84f3">2.7</text>
+<circle cx="952.00" cy="155.31" r="4.5" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
+<text x="952.00" y="145.31" text-anchor="middle" font-size="10" font-family="monospace" fill="#0b84f3">24</text>
+<polyline fill="none" stroke="#f06418" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="96.00,527.84 267.20,527.39 438.40,527.24 609.60,523.68 780.80,495.07 952.00,172.97"/>
+<circle cx="96.00" cy="527.84" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
+<text x="96.00" y="517.84" text-anchor="middle" font-size="10" font-family="monospace" fill="#f06418">0.01</text>
+<circle cx="267.20" cy="527.39" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
+<text x="267.20" y="517.39" text-anchor="middle" font-size="10" font-family="monospace" fill="#f06418">0.04</text>
+<circle cx="438.40" cy="527.24" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
+<text x="438.40" y="517.24" text-anchor="middle" font-size="10" font-family="monospace" fill="#f06418">0.05</text>
+<circle cx="609.60" cy="523.68" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
+<text x="609.60" y="513.68" text-anchor="middle" font-size="10" font-family="monospace" fill="#f06418">0.3</text>
+<circle cx="780.80" cy="495.07" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
+<text x="780.80" y="485.07" text-anchor="middle" font-size="10" font-family="monospace" fill="#f06418">2.1</text>
+<circle cx="952.00" cy="172.97" r="4.5" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
+<text x="952.00" y="162.97" text-anchor="middle" font-size="10" font-family="monospace" fill="#f06418">23</text>
 <line x1="108" y1="70" x2="132" y2="70" stroke="#111111" stroke-width="3"/>
 <circle cx="120" cy="70" r="4" fill="#111111" stroke="#ffffff" stroke-width="1.5"/>
 <text x="142" y="74" font-size="12" font-family="monospace" fill="#222222">PyTorch mm(fp32 out)</text>
 <line x1="108" y1="92" x2="132" y2="92" stroke="#0b84f3" stroke-width="3"/>
 <circle cx="120" cy="92" r="4" fill="#0b84f3" stroke="#ffffff" stroke-width="1.5"/>
-<text x="142" y="96" font-size="12" font-family="monospace" fill="#222222">PTX mma cp.async</text>
+<text x="142" y="96" font-size="12" font-family="monospace" fill="#222222">PTX WMMA cp.async best</text>
 <line x1="108" y1="114" x2="132" y2="114" stroke="#f06418" stroke-width="3"/>
 <circle cx="120" cy="114" r="4" fill="#f06418" stroke="#ffffff" stroke-width="1.5"/>
-<text x="142" y="118" font-size="12" font-family="monospace" fill="#222222">PTX ldmatrix block + cp.async(A)</text>
+<text x="142" y="118" font-size="12" font-family="monospace" fill="#222222">PTX handwritten hybrid</text>
 <text x="524.00" y="596" text-anchor="middle" font-size="13" font-family="monospace" fill="#222222">Matrix size N for N x N x N GEMM</text>
-<text transform="translate(24 292.00) rotate(-90)" text-anchor="middle" font-size="13" font-family="monospace" fill="#222222">Median runtime (ms, log scale)</text>
+<text transform="translate(24 292.00) rotate(-90)" text-anchor="middle" font-size="13" font-family="monospace" fill="#222222">Median runtime (ms)</text>
 </svg>

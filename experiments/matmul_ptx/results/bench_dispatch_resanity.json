@@ -1,0 +1,30 @@
+[
+  {
+    "size": 1024,
+    "default_med_ms": 0.07475200295448303,
+    "explicit128_med_ms": 0.09404800087213516,
+    "default_err": 0.000396728515625,
+    "explicit128_err": 0.000396728515625
+  },
+  {
+    "size": 2048,
+    "default_med_ms": 0.45260798931121826,
+    "explicit128_med_ms": 0.4437279999256134,
+    "default_err": 0.0,
+    "explicit128_err": 0.0
+  },
+  {
+    "size": 4096,
+    "default_med_ms": 3.1144959926605225,
+    "explicit128_med_ms": 2.976080060005188,
+    "default_err": 0.001953125,
+    "explicit128_err": 0.001953125
+  },
+  {
+    "size": 8192,
+    "default_med_ms": 25.588255882263184,
+    "explicit128_med_ms": 25.779711723327637,
+    "default_err": 0.00665283203125,
+    "explicit128_err": 0.00665283203125
+  }
+]

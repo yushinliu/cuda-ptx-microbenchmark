@@ -1,0 +1,12 @@
+[
+  {
+    "impl": "ptx_mma_cpasync",
+    "median_ms": 3.08787202835083,
+    "tflops": 44.509277654684205
+  },
+  {
+    "impl": "ptx_mma_cpasync_128",
+    "median_ms": 2.9837279319763184,
+    "tflops": 46.06283032681374
+  }
+]
